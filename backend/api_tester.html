@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Tester - Construction Costs System</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        .header h1 { font-size: 28px; margin-bottom: 10px; }
+        .header p { opacity: 0.9; }
+        .content { padding: 30px; }
+        .section {
+            margin-bottom: 30px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .section-header {
+            background: #f5f5f5;
+            padding: 15px 20px;
+            border-bottom: 1px solid #e0e0e0;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .section-header:hover { background: #ebebeb; }
+        .section-header h3 { color: #333; }
+        .section-body { padding: 20px; display: none; }
+        .section.active .section-body { display: block; }
+        .section.active .section-header { background: #667eea; color: white; }
+        .section.active .section-header h3 { color: white; }
+        
+        .auth-form {
+            display: grid;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #555;
+        }
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        .form-group input:focus, .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+        .btn-primary:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        .btn-success {
+            background: #10b981;
+            color: white;
+        }
+        .btn-success:hover {
+            background: #059669;
+        }
+        .btn-danger {
+            background: #ef4444;
+            color: white;
+        }
+        .btn-small {
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+        
+        .status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .status-ok { background: #d1fae5; color: #065f46; }
+        .status-error { background: #fee2e2; color: #991b1b; }
+        .status-warning { background: #fef3c7; color: #92400e; }
+        
+        .response-box {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            max-height: 400px;
+            overflow-y: auto;
+            margin-top: 15px;
+        }
+        .response-box pre {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        
+        .endpoint-list {
+            display: grid;
+            gap: 10px;
+        }
+        .endpoint-item {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            padding: 10px;
+            background: #f9fafb;
+            border-radius: 5px;
+            border: 1px solid #e5e7eb;
+        }
+        .endpoint-method {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 700;
+            min-width: 50px;
+            text-align: center;
+        }
+        .method-get { background: #dbeafe; color: #1e40af; }
+        .method-post { background: #d1fae5; color: #065f46; }
+        .method-put { background: #fef3c7; color: #92400e; }
+        .method-delete { background: #fee2e2; color: #991b1b; }
+        
+        .endpoint-path {
+            flex: 1;
+            font-family: monospace;
+            color: #374151;
+        }
+        
+        .token-display {
+            background: #f0fdf4;
+            border: 1px solid #bbf7d0;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 15px 0;
+            word-break: break-all;
+            font-size: 12px;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .stat-number {
+            font-size: 32px;
+            font-weight: 700;
+            margin-bottom: 5px;
+        }
+        .stat-label {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔧 API Тестер</h1>
+            <p>Система учета затрат строительной компании</p>
+            <p style="font-size: 12px; margin-top: 10px; opacity: 0.8;">
+                BASE URL: <strong id="baseUrl">http://localhost:8000</strong>
+            </p>
+        </div>
+
+        <div class="content">
+            <!-- Секция 1: Авторизация -->
+            <div class="section active">
+                <div class="section-header" onclick="toggleSection(this)">
+                    <h3>🔐 Авторизация</h3>
+                    <span>▼</span>
+                </div>
+                <div class="section-body">
+                    <div class="auth-form">
+                        <div class="form-group">
+                            <label>Пользователь</label>
+                            <select id="userSelect" onchange="fillCredentials()">
+                                <option value="admin:admin123">Admin (все права)</option>
+                                <option value="accountant:acc123">Бухгалтер</option>
+                                <option value="foreman1:for123">Бригадир 1</option>
+                                <option value="materials_manager:mat123">Менеджер материалов</option>
+                                <option value="equipment_manager:eq123">Менеджер техники</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Username</label>
+                            <input type="text" id="username" value="admin" placeholder="username">
+                        </div>
+                        <div class="form-group">
+                            <label>Password</label>
+                            <input type="password" id="password" value="admin123" placeholder="password">
+                        </div>
+                        <button class="btn btn-primary" onclick="login()">🔑 Войти</button>
+                    </div>
+                    
+                    <div id="tokenDisplay" class="token-display" style="display: none;">
+                        <strong>✅ Токен получен:</strong><br>
+                        <span id="tokenText"></span>
+                    </div>
+                    
+                    <div id="authResponse" class="response-box" style="display: none;">
+                        <pre id="authResponseText"></pre>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Секция 2: Базовые endpoints -->
+            <div class="section">
+                <div class="section-header" onclick="toggleSection(this)">
+                    <h3>🏠 Базовые endpoints</h3>
+                    <span>▼</span>
+                </div>
+                <div class="section-body">
+                    <div class="endpoint-list">
+                        <div class="endpoint-item">
+                            <span class="endpoint-method method-get">GET</span>
+                            <span class="endpoint-path">/</span>
+                            <button class="btn btn-small btn-success" onclick="testEndpoint('GET', '/')">Тест</button>
+                        </div>
+                        <div class="endpoint-item">
+                            <span class="endpoint-method method-get">GET</span>
+                            <span class="endpoint-path">/health</span>
+                            <button class="btn btn-small btn-success" onclick="testEndpoint('GET', '/health')">Тест</button>
+                        </div>
+                        <div class="endpoint-item">
+                            <span class="endpoint-method method-get">GET</span>
+                            <span class="endpoint-path">/docs</span>
+                            <button class="btn btn-small btn-success" onclick="window.open('http://localhost:8000/docs', '_blank')">Открыть</button>
+                        </div>
+                    </div>
+                    <div id="basicResponse" class="response-box" style="display: none;">
+                        <pre id="basicResponseText"></pre>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Секция 3: Объекты учета -->
+            <div class="section">
+                <div class="section-header" onclick="toggleSection(this)">
+                    <h3>🏗️ Объекты учета</h3>
+                    <span>▼</span>
+                </div>
+                <div class="section-body">
+                    <div class="endpoint-list">
+                        <div class="endpoint-item">
+                            <span class="endpoint-method method-get">GET</span>
+                            <span class="endpoint-path">/api/v1/objects</span>
+                            <button class="btn btn-small btn-success" onclick="testEndpoint('GET', '/api/v1/objects', true)">Тест</button>
+                        </div>
+                        <div class="endpoint-item">
+                            <span class="endpoint-method method-get">GET</span>
+                            <span class="endpoint-path">/api/v1/objects/{id}</span>
+                            <input type="number" id="objectId" placeholder="ID" style="width: 80px; padding: 4px;">
+                            <button class="btn btn-small btn-success" onclick="testEndpoint('GET', '/api/v1/objects/' + document.getElementById('objectId').value, true)">Тест</button>
+                        </div>
+                    </div>
+                    <div id="objectsResponse" class="response-box" style="display: none;">
+                        <pre id="objectsResponseText"></pre>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Секция 4: Табели -->
+            <div class="section">
+                <div class="section-header" onclick="toggleSection(this)">
+                    <h3>📋 Табели РТБ</h3>
+                    <span>▼</span>
+                </div>
+                <div class="section-body">
+                    <div class="endpoint-list">
+                        <div class="endpoint-item">
+                            <span class="endpoint-method method-get">GET</span>
+                            <span class="endpoint-path">/api/v1/time-sheets</span>
+                            <button class="btn btn-small btn-success" onclick="testEndpoint('GET', '/api/v1/time-sheets', true)">Тест</button>
+                        </div>
+                        <div class="endpoint-item">
+                            <span class="endpoint-method method-get">GET</span>
+                            <span class="endpoint-path">/api/v1/time-sheets/brigades</span>
+                            <button class="btn btn-small btn-success" onclick="testEndpoint('GET', '/api/v1/time-sheets/brigades', true)">Тест</button>
+                        </div>
+                    </div>
+                    <div id="timesheetsResponse" class="response-box" style="display: none;">
+                        <pre id="timesheetsResponseText"></pre>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Секция 5: Заявки -->
+            <div class="section">
+                <div class="section-header" onclick="toggleSection(this)">
+                    <h3>📦 Заявки</h3>
+                    <span>▼</span>
+                </div>
+                <div class="section-body">
+                    <div class="endpoint-list">
+                        <div class="endpoint-item">
+                            <span class="endpoint-method method-get">GET</span>
+                            <span class="endpoint-path">/api/v1/material-requests</span>
+                            <button class="btn btn-small btn-success" onclick="testEndpoint('GET', '/api/v1/material-requests', true)">Тест</button>
+                        </div>
+                        <div class="endpoint-item">
+                            <span class="endpoint-method method-get">GET</span>
+                            <span class="endpoint-path">/api/v1/equipment-orders</span>
+                            <button class="btn btn-small btn-success" onclick="testEndpoint('GET', '/api/v1/equipment-orders', true)">Тест</button>
+                        </div>
+                    </div>
+                    <div id="requestsResponse" class="response-box" style="display: none;">
+                        <pre id="requestsResponseText"></pre>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Секция 6: Аналитика -->
+            <div class="section">
+                <div class="section-header" onclick="toggleSection(this)">
+                    <h3>📊 Аналитика</h3>
+                    <span>▼</span>
+                </div>
+                <div class="section-body">
+                    <div class="stats-grid" id="statsGrid" style="display: none;">
+                        <div class="stat-card">
+                            <div class="stat-number" id="statObjects">-</div>
+                            <div class="stat-label">Объектов</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number" id="statBrigades">-</div>
+                            <div class="stat-label">Бригад</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number" id="statMaterials">-</div>
+                            <div class="stat-label">Заявок материалов</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number" id="statEquipment">-</div>
+                            <div class="stat-label">Заявок техники</div>
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" onclick="loadStats()">📈 Загрузить статистику</button>
+                    <div id="analyticsResponse" class="response-box" style="display: none; margin-top: 15px;">
+                        <pre id="analyticsResponseText"></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const BASE_URL = 'http://localhost:8000';
+        let accessToken = null;
+
+        function toggleSection(header) {
+            const section = header.parentElement;
+            const wasActive = section.classList.contains('active');
+            
+            document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+            
+            if (!wasActive) {
+                section.classList.add('active');
+            }
+        }
+
+        function fillCredentials() {
+            const select = document.getElementById('userSelect');
+            const [username, password] = select.value.split(':');
+            document.getElementById('username').value = username;
+            document.getElementById('password').value = password;
+        }
+
+        async function login() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            
+            const responseDiv = document.getElementById('authResponse');
+            const responseText = document.getElementById('authResponseText');
+            const tokenDisplay = document.getElementById('tokenDisplay');
+            const tokenText = document.getElementById('tokenText');
+            
+            try {
+                const response = await fetch(`${BASE_URL}/api/v1/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                
+                const data = await response.json();
+                
+                responseDiv.style.display = 'block';
+                responseText.textContent = JSON.stringify(data, null, 2);
+                
+                if (response.ok && data.access_token) {
+                    accessToken = data.access_token;
+                    tokenDisplay.style.display = 'block';
+                    tokenText.textContent = accessToken.substring(0, 50) + '...';
+                    
+                    // Показать успех
+                    showNotification('✅ Авторизация успешна!', 'success');
+                } else {
+                    showNotification('❌ Ошибка авторизации', 'error');
+                }
+            } catch (error) {
+                responseDiv.style.display = 'block';
+                responseText.textContent = `ERROR: ${error.message}`;
+                showNotification('❌ Ошибка соединения', 'error');
+            }
+        }
+
+        async function testEndpoint(method, path, requiresAuth = false, responseElementId = null) {
+            const responseDiv = responseElementId ? 
+                document.getElementById(responseElementId) : 
+                document.getElementById('basicResponse');
+            const responseText = responseElementId ? 
+                document.getElementById(responseElementId + 'Text') : 
+                document.getElementById('basicResponseText');
+            
+            if (requiresAuth && !accessToken) {
+                showNotification('⚠️ Сначала авторизуйтесь!', 'warning');
+                return;
+            }
+            
+            const headers = { 'Content-Type': 'application/json' };
+            if (requiresAuth && accessToken) {
+                headers['Authorization'] = `Bearer ${accessToken}`;
+            }
+            
+            try {
+                const response = await fetch(`${BASE_URL}${path}`, {
+                    method: method,
+                    headers: headers
+                });
+                
+                let data;
+                const contentType = response.headers.get('content-type');
+                if (contentType && contentType.includes('application/json')) {
+                    data = await response.json();
+                } else {
+                    data = await response.text();
+                }
+                
+                responseDiv.style.display = 'block';
+                responseText.textContent = typeof data === 'object' ? 
+                    JSON.stringify(data, null, 2) : data;
+                
+                if (response.ok) {
+                    showNotification(`✅ ${method} ${path} - OK`, 'success');
+                } else {
+                    showNotification(`❌ ${method} ${path} - ${response.status}`, 'error');
+                }
+                
+                return data;
+            } catch (error) {
+                responseDiv.style.display = 'block';
+                responseText.textContent = `ERROR: ${error.message}`;
+                showNotification(`❌ Ошибка: ${error.message}`, 'error');
+            }
+        }
+
+        async function loadStats() {
+            if (!accessToken) {
+                showNotification('⚠️ Сначала авторизуйтесь!', 'warning');
+                return;
+            }
+            
+            const headers = { 'Authorization': `Bearer ${accessToken}` };
+            
+            try {
+                const [objects, brigades, materials, equipment] = await Promise.all([
+                    fetch(`${BASE_URL}/api/v1/objects`, { headers }).then(r => r.json()),
+                    fetch(`${BASE_URL}/api/v1/time-sheets/brigades`, { headers }).then(r => r.json()),
+                    fetch(`${BASE_URL}/api/v1/material-requests`, { headers }).then(r => r.json()),
+                    fetch(`${BASE_URL}/api/v1/equipment-orders`, { headers }).then(r => r.json())
+                ]);
+                
+                document.getElementById('statObjects').textContent = objects.length || 0;
+                document.getElementById('statBrigades').textContent = brigades.length || 0;
+                document.getElementById('statMaterials').textContent = materials.length || 0;
+                document.getElementById('statEquipment').textContent = equipment.length || 0;
+                
+                document.getElementById('statsGrid').style.display = 'grid';
+                
+                const analyticsDiv = document.getElementById('analyticsResponse');
+                const analyticsText = document.getElementById('analyticsResponseText');
+                analyticsDiv.style.display = 'block';
+                analyticsText.textContent = JSON.stringify({
+                    objects: objects.length,
+                    brigades: brigades.length,
+                    material_requests: materials.length,
+                    equipment_orders: equipment.length,
+                    timestamp: new Date().toISOString()
+                }, null, 2);
+                
+                showNotification('✅ Статистика загружена', 'success');
+            } catch (error) {
+                showNotification(`❌ Ошибка загрузки: ${error.message}`, 'error');
+            }
+        }
+
+        function showNotification(message, type) {
+            // Простое уведомление в консоли
+            console.log(`[${type.toUpperCase()}] ${message}`);
+            
+            // Можно добавить toast уведомления
+            const notification = document.createElement('div');
+            notification.textContent = message;
+            notification.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                padding: 15px 25px;
+                background: ${type === 'success' ? '#10b981' : type === 'error' ? '#ef4444' : '#f59e0b'};
+                color: white;
+                border-radius: 8px;
+                box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+                z-index: 1000;
+                animation: slideIn 0.3s ease;
+            `;
+            
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.style.animation = 'slideOut 0.3s ease';
+                setTimeout(() => notification.remove(), 300);
+            }, 3000);
+        }
+
+        // Автоматический тест при загрузке
+        window.addEventListener('load', () => {
+            console.log('🚀 API Tester загружен');
+            console.log('BASE_URL:', BASE_URL);
+            
+            // Тест доступности сервера
+            testEndpoint('GET', '/').then(() => {
+                console.log('✅ Сервер доступен');
+            });
+        });
+    </script>
+    
+    <style>
+        @keyframes slideIn {
+            from {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        @keyframes slideOut {
+            from {
+                transform: translateX(0);
+                opacity: 1;
+            }
+            to {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+        }
+    </style>
+</body>
+</html>
