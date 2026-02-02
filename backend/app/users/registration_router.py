@@ -28,6 +28,7 @@ class RegistrationRequestCreate(BaseModel):
     phone: str
     telegram_chat_id: str
     telegram_username: Optional[str] = None
+    requested_role: Optional[str] = None
 
 
 class RegistrationRequestResponse(BaseModel):
@@ -38,6 +39,7 @@ class RegistrationRequestResponse(BaseModel):
     phone: str
     telegram_chat_id: str
     telegram_username: Optional[str]
+    requested_role: Optional[str]
     status: str
     created_at: datetime
     processed_by_id: Optional[int]
@@ -49,16 +51,12 @@ class RegistrationRequestResponse(BaseModel):
 
 
 class ApproveRequest(BaseModel):
-    """Схема одобрения заявки"""
-    roles: List[str] = ["FOREMAN"]  # По умолчанию бригадир
-
+    """Схема для одобрения заявки"""
+    roles: List[str]
 
 class RejectRequest(BaseModel):
-    """Схема отклонения заявки"""
+    """Схема для отклонения заявки"""
     reason: str
-
-
-# ===== Endpoints =====
 
 @router.post("/", response_model=RegistrationRequestResponse)
 async def create_registration_request(
@@ -66,28 +64,33 @@ async def create_registration_request(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Создание заявки на регистрацию (публичный endpoint для бота)
+    Создание заявки на регистрацию
+    Публичный endpoint (без авторизации)
     """
-    # Проверяем, нет ли уже заявки с таким telegram_chat_id
-    existing = await db.execute(
+    # Проверяем, есть ли уже заявка с таким телефоном
+    existing_phone = await db.execute(
         select(RegistrationRequest).where(
-            RegistrationRequest.telegram_chat_id == data.telegram_chat_id
+            RegistrationRequest.phone == data.phone,
+            RegistrationRequest.status == RegistrationRequestStatus.PENDING.value
         )
     )
-    if existing.scalar_one_or_none():
+    if existing_phone.scalar_one_or_none():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Заявка с этим Telegram аккаунтом уже существует"
+            detail="Заявка с таким номером телефона уже существует и находится на рассмотрении"
         )
-    
-    # Проверяем, нет ли уже пользователя с таким telegram_chat_id
-    existing_user = await db.execute(
-        select(User).where(User.telegram_chat_id == data.telegram_chat_id)
+
+    # Проверяем, есть ли уже заявка с таким telegram_chat_id
+    existing_tg = await db.execute(
+        select(RegistrationRequest).where(
+            RegistrationRequest.telegram_chat_id == data.telegram_chat_id,
+            RegistrationRequest.status == RegistrationRequestStatus.PENDING.value
+        )
     )
-    if existing_user.scalar_one_or_none():
+    if existing_tg.scalar_one_or_none():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Пользователь с этим Telegram аккаунтом уже зарегистрирован"
+            detail="Заявка с этого аккаунта Telegram уже существует"
         )
     
     # Парсим дату рождения
@@ -96,16 +99,15 @@ async def create_registration_request(
     except ValueError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Неверный формат даты рождения. Используйте YYYY-MM-DD"
+            detail="Неверный формат даты. Используйте YYYY-MM-DD"
         )
-    
-    # Создаем заявку
     request = RegistrationRequest(
         full_name=data.full_name,
         birth_date=birth_date,
         phone=data.phone,
         telegram_chat_id=data.telegram_chat_id,
         telegram_username=data.telegram_username,
+        requested_role=data.requested_role,
         status=RegistrationRequestStatus.PENDING.value
     )
     
@@ -113,7 +115,7 @@ async def create_registration_request(
     await db.commit()
     await db.refresh(request)
     
-    logger.info(f"Created registration request #{request.id} for {data.full_name}")
+    logger.info(f"Created registration request #{request.id} for {data.full_name} (Role: {data.requested_role})")
     
     # TODO: Отправить уведомление менеджерам
     
@@ -124,6 +126,7 @@ async def create_registration_request(
         phone=request.phone,
         telegram_chat_id=request.telegram_chat_id,
         telegram_username=request.telegram_username,
+        requested_role=request.requested_role,
         status=request.status,
         created_at=request.created_at,
         processed_by_id=request.processed_by_id,

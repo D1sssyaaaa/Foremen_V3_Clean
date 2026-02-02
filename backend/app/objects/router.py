@@ -11,6 +11,8 @@ from app.models import User, CostObject, ObjectAccessRequest
 from app.auth.dependencies import get_current_user, require_roles
 from app.core.models_base import UserRole, ObjectStatus, ObjectAccessRequestStatus
 from app.services.object_service import ObjectService
+from sqlalchemy import func
+from app.models import MaterialCost, TimeSheet, TimeSheetItem
 
 router = APIRouter()
 
@@ -19,10 +21,22 @@ class CreateObjectRequest(BaseModel):
     name: str
     code: Optional[str] = None  # Опционально - генерируется автоматически
     contract_number: Optional[str] = None
+    customer_name: Optional[str] = None
     material_amount: Optional[float] = None
     labor_amount: Optional[float] = None
     # contract_amount оставляем для обратной совместимости
     contract_amount: Optional[float] = None
+
+
+class UpdateObjectRequest(BaseModel):
+    name: Optional[str] = None
+    customer_name: Optional[str] = None
+    contract_number: Optional[str] = None
+    contract_amount: Optional[float] = None
+    material_amount: Optional[float] = None
+    labor_amount: Optional[float] = None
+    status: Optional[str] = None
+    description: Optional[str] = None
 
 
 @router.get("/")
@@ -60,10 +74,44 @@ async def get_objects(
         foreman_id=foreman_id
     )
     
-    return [
-        {
+    
+    # Calculate detailed stats for table view
+    objects_with_stats = []
+    
+    for obj in objects:
+        # Plan
+        plan_materials = obj.material_amount or 0
+        plan_labor = obj.labor_amount or 0
+        plan_total = obj.contract_amount or (plan_materials + plan_labor)
+        
+        # Fact - Materials
+        mat_res = await db.execute(
+            select(func.sum(MaterialCost.total_amount))
+            .where(MaterialCost.cost_object_id == obj.id)
+        )
+        fact_materials = mat_res.scalar() or 0
+        
+        # Fact - Labor (TimeSheetItem * TimeSheet.hour_rate)
+        labor_res = await db.execute(
+            select(func.sum(TimeSheetItem.hours * TimeSheet.hour_rate))
+            .join(TimeSheet, TimeSheetItem.time_sheet_id == TimeSheet.id)
+            .where(TimeSheetItem.cost_object_id == obj.id)
+        )
+        fact_labor = labor_res.scalar() or 0
+        
+        # Balance
+        diff_materials = plan_materials - fact_materials
+        diff_labor = plan_labor - fact_labor
+        diff_total = plan_total - (fact_materials + fact_labor)
+        
+        # Margin %
+        margin_mat_pct = (diff_materials / plan_materials * 100) if plan_materials > 0 else 0
+        margin_labor_pct = (diff_labor / plan_labor * 100) if plan_labor > 0 else 0
+
+        objects_with_stats.append({
             "id": obj.id,
             "name": obj.name,
+            "customer_name": obj.customer_name,
             "code": obj.code,
             "contract_number": obj.contract_number,
             "contract_amount": obj.contract_amount,
@@ -73,10 +121,31 @@ async def get_objects(
             "end_date": obj.end_date,
             "status": obj.status,
             "is_active": obj.is_active,
-            "budget_amount": obj.budget_amount
-        }
-        for obj in objects
-    ]
+            "budget_amount": obj.budget_amount,
+            "stats": {
+                "plan": {
+                    "materials": plan_materials,
+                    "labor": plan_labor,
+                    "total": plan_total
+                },
+                "fact": {
+                    "materials": fact_materials,
+                    "labor": fact_labor,
+                    "total": fact_materials + fact_labor
+                },
+                "balance": {
+                    "materials": diff_materials,
+                    "labor": diff_labor,
+                    "total": diff_total
+                },
+                "margin_pct": {
+                    "materials": margin_mat_pct,
+                    "labor": margin_labor_pct
+                }
+            }
+        })
+        
+    return objects_with_stats
 
 
 @router.get("/{object_id}")
@@ -97,12 +166,16 @@ async def get_object(
     return {
         "id": obj.id,
         "name": obj.name,
+        "customer_name": obj.customer_name,
         "code": obj.code,
         "contract_number": obj.contract_number,
         "contract_amount": obj.contract_amount,
+        "material_amount": obj.material_amount,
+        "labor_amount": obj.labor_amount,
         "start_date": obj.start_date,
         "end_date": obj.end_date,
         "description": obj.description,
+        "status": obj.status,
         "is_active": obj.is_active
     }
 
@@ -162,6 +235,7 @@ async def create_object(
         name=request.name,
         code=code,
         contract_number=request.contract_number,
+        customer_name=request.customer_name,
         contract_amount=contract_amount,
         material_amount=request.material_amount,
         labor_amount=request.labor_amount,
@@ -176,6 +250,7 @@ async def create_object(
     return {
         "id": obj.id,
         "name": obj.name,
+        "customer_name": obj.customer_name,
         "code": obj.code,
         "contract_number": obj.contract_number,
         "contract_amount": obj.contract_amount,
@@ -183,6 +258,54 @@ async def create_object(
         "labor_amount": obj.labor_amount,
         "status": obj.status,
         "is_active": obj.is_active
+    }
+
+
+@router.put("/{object_id}")
+async def update_object(
+    object_id: int,
+    request: UpdateObjectRequest,
+    current_user: User = Depends(require_roles([UserRole.MANAGER, UserRole.ADMIN])),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Обновление данных объекта
+    """
+    obj = await db.get(CostObject, object_id)
+    if not obj:
+        raise HTTPException(status_code=404, detail="Объект не найден")
+
+    if request.name is not None:
+        obj.name = request.name
+    if request.customer_name is not None:
+        obj.customer_name = request.customer_name
+    if request.contract_number is not None:
+        obj.contract_number = request.contract_number
+    if request.contract_amount is not None:
+        obj.contract_amount = request.contract_amount
+    if request.material_amount is not None:
+        obj.material_amount = request.material_amount
+    if request.labor_amount is not None:
+        obj.labor_amount = request.labor_amount
+    if request.description is not None:
+        obj.description = request.description
+        
+    if request.status is not None:
+        allowed_statuses = ["ACTIVE", "PREPARATION_TO_CLOSE", "CLOSED", "ARCHIVE"]
+        if request.status not in allowed_statuses:
+             raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Недопустимый статус. Разрешены: {', '.join(allowed_statuses)}"
+            )
+        obj.status = request.status
+
+    await db.commit()
+    await db.refresh(obj)
+    
+    return {
+        "id": obj.id,
+        "name": obj.name,
+        "status": obj.status
     }
 
 
@@ -317,6 +440,7 @@ async def get_object_stats(
         "object_id": object_id,
         "object_name": obj.name,
         "object_code": obj.code,
+        "object_status": obj.status,
         "material_requests": {
             "count": material_requests.count or 0,
             "total": 0,  # Сумма рассчитывается через УПД
@@ -502,6 +626,63 @@ async def change_object_status(
         "is_active": obj.is_active,
         "message": f"Статус объекта изменён на '{new_status}'"
     }
+
+
+    return {
+        "budget": budget.amount if budget else 0.0,
+        "labor_limit": budget.labor_limit if budget else None,
+        "material_limit": budget.material_limit if budget else None,
+        "equipment_limit": budget.equipment_limit if budget else None,
+        "updated_at": budget.updated_at if budget else None
+    }
+
+
+@router.get("/{object_id}/material-items")
+async def get_object_material_items(
+    object_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Получение списка вех позиций материалов по объекту 
+    (детализация всех УПД)
+    """
+    # 1. Проверяем доступ к объекту
+    # TODO: Добавить проверку прав? Пока разрешаем всем авторизованным смотреть
+
+    # 2. Запрашиваем items
+    from app.models import MaterialCost, MaterialCostItem
+    
+    query = (
+        select(MaterialCostItem)
+        .join(MaterialCost, MaterialCostItem.material_cost_id == MaterialCost.id)
+        .where(MaterialCost.cost_object_id == object_id)
+        .order_by(desc(MaterialCost.document_date))
+    )
+    
+    # Подгружаем родительский MaterialCost чтобы взять дату/поставщика
+    from sqlalchemy.orm import selectinload
+    query = query.options(selectinload(MaterialCostItem.material_cost))
+
+    result = await db.execute(query)
+    items = result.scalars().all()
+
+    return [
+        {
+            "id": item.id,
+            "product_name": item.product_name,
+            "quantity": item.quantity,
+            "unit": item.unit,
+            "price": item.price,
+            "amount": item.amount,
+            
+            # Данные из "шапки" УПД
+            "document_date": item.material_cost.document_date if item.material_cost.document_date else None,
+            "document_number": item.material_cost.document_number,
+            "supplier_name": item.material_cost.supplier_name
+        }
+        for item in items
+    ]
 
 
 @router.get("/{object_id}/budget")
@@ -914,7 +1095,11 @@ async def get_object_costs(
 ):
     """
     Получение детальных списков затрат по объекту
-    Возвращает таблицы с конкретными записями затрат по категориям
+    Возвращает таблицы с конкретными записями затрат по категориям:
+    - materials: Закупка материалов (УПД)
+    - equipment_deliveries: Техника и доставки
+    - labor: Зарплаты РТБ
+    - other: Иные затраты
     Доступно: всем кроме FOREMAN
     """
     # Проверка прав
@@ -925,83 +1110,151 @@ async def get_object_costs(
             detail="Недостаточно прав для просмотра затрат"
         )
     
-    from app.models import CostEntry
+    from app.models import MaterialCost, EquipmentCost, EquipmentOrder, OtherCost, DeliveryCost, TimeSheet, TimeSheetItem
+    from sqlalchemy import func
+    from sqlalchemy.orm import selectinload
     
     obj = await db.get(CostObject, object_id)
     if not obj:
         raise HTTPException(status_code=404, detail="Объект не найден")
     
-    # 1. Затраты из УПД (материалы)
-    upd_costs_result = await db.execute(
-        select(CostEntry)
-        .where(
-            (CostEntry.cost_object_id == object_id) &
-            (CostEntry.type == "МАТЕРИАЛЫ")
-        )
-        .order_by(CostEntry.date.desc())
-        .limit(100)  # Ограничение для производительности
-    )
-    upd_costs = upd_costs_result.scalars().all()
-    
-    # 2. Затраты на технику
-    equipment_costs_result = await db.execute(
-        select(CostEntry)
-        .where(
-            (CostEntry.cost_object_id == object_id) &
-            (CostEntry.type == "ТЕХНИКА")
-        )
-        .order_by(CostEntry.date.desc())
+    # 1. Материалы (УПД документы) с детализацией
+    materials_result = await db.execute(
+        select(MaterialCost)
+        .options(selectinload(MaterialCost.items))
+        .where(MaterialCost.cost_object_id == object_id)
+        .order_by(MaterialCost.document_date.desc())
         .limit(100)
     )
-    equipment_costs = equipment_costs_result.scalars().all()
+    materials = materials_result.scalars().all()
     
-    # 3. Затраты на РТБ
-    labor_costs_result = await db.execute(
-        select(CostEntry)
-        .where(
-            (CostEntry.cost_object_id == object_id) &
-            (CostEntry.type == "РТБ")
-        )
-        .order_by(CostEntry.date.desc())
+    # 2. Техника (связанные затраты через EquipmentCost)
+    equipment_result = await db.execute(
+        select(EquipmentCost, EquipmentOrder)
+        .join(EquipmentOrder, EquipmentOrder.id == EquipmentCost.equipment_order_id)
+        .where(EquipmentOrder.cost_object_id == object_id)
+        .order_by(EquipmentCost.work_date.desc())
         .limit(100)
     )
-    labor_costs = labor_costs_result.scalars().all()
+    equipment_rows = equipment_result.all()
+    
+    # 3. Доставки
+    deliveries_result = await db.execute(
+        select(DeliveryCost)
+        .where(DeliveryCost.cost_object_id == object_id)
+        .order_by(DeliveryCost.date.desc())
+        .limit(100)
+    )
+    deliveries = deliveries_result.scalars().all()
+    
+    # 4. РТБ (Зарплаты из табелей)
+    labor_result = await db.execute(
+        select(
+            TimeSheetItem.id,
+            TimeSheetItem.date,
+            TimeSheetItem.hours,
+            TimeSheet.hour_rate,
+            TimeSheet.period_start,
+            TimeSheet.period_end
+        )
+        .join(TimeSheet, TimeSheet.id == TimeSheetItem.time_sheet_id)
+        .where(TimeSheetItem.cost_object_id == object_id)
+        .order_by(TimeSheet.period_start.desc())
+        .limit(100)
+    )
+    labor_rows = labor_result.all()
+    
+    # 5. Иные затраты
+    other_result = await db.execute(
+        select(OtherCost)
+        .where(OtherCost.cost_object_id == object_id)
+        .order_by(OtherCost.date.desc())
+        .limit(100)
+    )
+    other_costs = other_result.scalars().all()
+    
+    # Расчет сумм
+    materials_total = sum(float(m.total_amount or 0) for m in materials)
+    equipment_total = sum(float(row[0].total_amount or 0) for row in equipment_rows)
+    deliveries_total = sum(float(d.amount or 0) for d in deliveries)
+    labor_total = sum(float(row.hours or 0) * float(row.hour_rate or 0) for row in labor_rows)
+    other_total = sum(float(o.amount or 0) for o in other_costs)
     
     return {
         "object_id": object_id,
         "object_name": obj.name,
+        "summary": {
+            "materials_total": materials_total,
+            "equipment_deliveries_total": equipment_total + deliveries_total,
+            "labor_total": labor_total,
+            "other_total": other_total,
+            "work_total": equipment_total + deliveries_total + labor_total + other_total,
+            "grand_total": materials_total + equipment_total + deliveries_total + labor_total + other_total
+        },
         "materials": [
             {
-                "id": cost.id,
-                "date": cost.date.isoformat() if cost.date else None,
-                "amount": float(cost.amount),
-                "description": cost.description,
-                "reference_id": cost.reference_id,
-                "reference_type": cost.reference_type
+                "id": m.id,
+                "date": m.document_date.isoformat() if m.document_date else None,
+                "amount": float(m.total_amount or 0),
+                "description": m.supplier_name,
+                "document_number": m.document_number,
+                "items": [
+                    {
+                        "id": item.id,
+                        "name": item.product_name,
+                        "quantity": float(item.quantity or 0),
+                        "unit": item.unit,
+                        "price": float(item.price or 0),
+                        "amount": float(item.amount or 0)
+                    }
+                    for item in m.items
+                ]
             }
-            for cost in upd_costs
+            for m in materials
         ],
-        "equipment": [
-            {
-                "id": cost.id,
-                "date": cost.date.isoformat() if cost.date else None,
-                "amount": float(cost.amount),
-                "description": cost.description,
-                "reference_id": cost.reference_id,
-                "reference_type": cost.reference_type
-            }
-            for cost in equipment_costs
+        "equipment_deliveries": [
+            # Техника
+            *[
+                {
+                    "id": f"eq_{row[0].id}",
+                    "date": row[0].work_date.isoformat() if row[0].work_date else None,
+                    "amount": float(row[0].total_amount or 0),
+                    "description": row[1].equipment_type if row[1] else "Техника",
+                    "type": "equipment"
+                }
+                for row in equipment_rows
+            ],
+            # Доставки
+            *[
+                {
+                    "id": f"del_{d.id}",
+                    "date": d.date.isoformat() if d.date else None,
+                    "amount": float(d.amount or 0),
+                    "description": d.comment or "Доставка",
+                    "type": "delivery"
+                }
+                for d in deliveries
+            ]
         ],
         "labor": [
             {
-                "id": cost.id,
-                "date": cost.date.isoformat() if cost.date else None,
-                "amount": float(cost.amount),
-                "description": cost.description,
-                "reference_id": cost.reference_id,
-                "reference_type": cost.reference_type
+                "id": row.id,
+                "date": row.date.isoformat() if row.date else None,
+                "amount": float(row.hours or 0) * float(row.hour_rate or 0),
+                "description": f"РТБ {row.period_start} - {row.period_end}" if row.period_start else "Рабочие часы",
+                "hours": float(row.hours or 0)
             }
-            for cost in labor_costs
+            for row in labor_rows
+        ],
+        "other": [
+            {
+                "id": o.id,
+                "date": o.date.isoformat() if o.date else None,
+                "amount": float(o.amount or 0),
+                "description": o.comment or "Иные затраты"
+            }
+            for o in other_costs
         ]
     }
+
 

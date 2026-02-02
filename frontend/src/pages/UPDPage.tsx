@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { apiClient } from '../api/client';
 import type { UPDDocument, UPDDetailResponse, CostObject } from '../types';
 
@@ -213,9 +213,8 @@ export function UPDPage() {
             </thead>
             <tbody>
               {upds.map(upd => (
-                <>
+                <React.Fragment key={upd.id}>
                   <tr
-                    key={upd.id}
                     style={{ borderBottom: '1px solid #dee2e6', cursor: 'pointer', backgroundColor: expandedRowId === upd.id ? '#f0f7ff' : 'transparent' }}
                     onClick={() => toggleRow(upd.id)}
                   >
@@ -305,7 +304,7 @@ export function UPDPage() {
                       </td>
                     </tr>
                   )}
-                </>
+                </React.Fragment>
               ))}
             </tbody>
           </table>

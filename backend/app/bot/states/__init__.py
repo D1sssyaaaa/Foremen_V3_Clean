@@ -78,6 +78,7 @@ class RegistrationStates(StatesGroup):
     input_full_name = State()
     input_birth_date = State()
     input_phone = State()
+    select_role = State()
     confirm = State()
 
 class DeliveryStates(StatesGroup):

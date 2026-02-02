@@ -143,7 +143,18 @@ async def login(
             )
         
         # Парсинг ролей из JSON (для SQLite совместимости)
-        roles = user.roles if isinstance(user.roles, list) else json.loads(user.roles) if isinstance(user.roles, str) else []
+        # Парсинг ролей из JSON (для SQLite совместимости)
+        roles = []
+        if isinstance(user.roles, list):
+            roles = user.roles
+        elif isinstance(user.roles, str):
+            try:
+                roles = json.loads(user.roles)
+            except (json.JSONDecodeError, TypeError):
+                logger.error(f"Failed to parse roles for user {request.username}: {user.roles}")
+                roles = []
+        else:
+            roles = []
         logger.debug(f"Parsed roles for {request.username}: {roles}")
         
         # Создание токенов - конвертируем user.id в строку для JWT

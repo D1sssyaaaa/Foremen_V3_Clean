@@ -23,6 +23,8 @@ class ObjectCostSummary(BaseModel):
     contract_amount: Optional[Decimal]
     remaining_budget: Optional[Decimal]
     budget_utilization_percent: Optional[Decimal]
+    planned_labor_cost: Optional[Decimal]
+    planned_material_cost: Optional[Decimal]
 
 
 class PeriodCostReport(BaseModel):

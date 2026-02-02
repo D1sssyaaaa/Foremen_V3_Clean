@@ -49,6 +49,10 @@ class MaterialRequestService:
         obj = await self.db.get(CostObject, data.cost_object_id)
         if not obj:
             raise ValueError(f"Объект учета {data.cost_object_id} не найден")
+
+        from app.core.models_base import ObjectStatus
+        if obj.status == ObjectStatus.CLOSED.value:
+            raise ValueError(f"Объект '{obj.name}' закрыт. Создание заявок запрещено.")
         
         # Создание заявки
         request = MaterialRequest(

@@ -15,6 +15,7 @@ import { TimeSheetsPage } from './pages/TimeSheetsPage';
 import { AnalyticsPage } from './pages/AnalyticsPage';
 import { NotificationsPage } from './pages/NotificationsPage';
 import { AdminPage } from './pages/AdminPage';
+import { ManagerDashboardPage } from './pages/ManagerDashboardPage';
 
 function App() {
   return (
@@ -23,7 +24,7 @@ function App() {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
-          
+
           <Route
             path="/"
             element={
@@ -140,6 +141,17 @@ function App() {
               <ProtectedRoute roles={['ADMIN']}>
                 <Layout>
                   <AdminPage />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/manager-dashboard"
+            element={
+              <ProtectedRoute roles={['MANAGER', 'ADMIN']}>
+                <Layout>
+                  <ManagerDashboardPage />
                 </Layout>
               </ProtectedRoute>
             }

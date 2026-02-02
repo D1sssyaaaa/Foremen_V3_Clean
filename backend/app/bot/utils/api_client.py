@@ -222,12 +222,42 @@ class APIClient:
             return response.status_code == 200
         except Exception:
             return False    
+    async def approve_registration(self, request_id: int, roles: list[str]) -> Dict[str, Any]:
+        """Одобрить заявку на регистрацию"""
+        if not self.token:
+            # Требуется токен админа/менеджера
+            raise ValueError("Token required for this operation")
+            
+        headers = self.headers
+        response = await self.client.post(
+            f"{self.base_url}/registration-requests/{request_id}/approve",
+            json={"roles": roles},
+            headers=headers
+        )
+        response.raise_for_status()
+        return response.json()
+    
+    async def reject_registration(self, request_id: int, reason: str) -> Dict[str, Any]:
+        """Отклонить заявку на регистрацию"""
+        if not self.token:
+            raise ValueError("Token required for this operation")
+            
+        headers = self.headers
+        response = await self.client.post(
+            f"{self.base_url}/registration-requests/{request_id}/reject",
+            json={"reason": reason},
+            headers=headers
+        )
+        response.raise_for_status()
+        return response.json()
+
     async def link_telegram_account(
         self, 
         code: str, 
         telegram_chat_id: str,
         telegram_username: Optional[str] = None
     ) -> Optional[Dict[str, Any]]:
+# ... (rest of link_telegram_account)
         """Привязка Telegram аккаунта по коду"""
         try:
             response = await self.client.post(

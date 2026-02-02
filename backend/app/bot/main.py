@@ -5,7 +5,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 
 from app.bot.config import config
-from app.bot.handlers import common, materials, equipment, time_sheets, objects, deliveries
+from app.bot.handlers import common, materials, equipment, time_sheets, objects, deliveries, registration, admin
 from app.bot.notification_worker import start_notification_worker
 
 # Настройка логирования
@@ -25,11 +25,13 @@ async def main():
     
     # Регистрация роутеров
     dp.include_router(common.router)
+    dp.include_router(registration.router)
     dp.include_router(materials.router)
     dp.include_router(equipment.router)
     dp.include_router(deliveries.router)
     dp.include_router(time_sheets.router)
     dp.include_router(objects.router)
+    dp.include_router(admin.router)
     
     logger.info("🤖 Construction Costs Bot started")
     logger.info(f"📡 API Base URL: {config.api_base_url}")

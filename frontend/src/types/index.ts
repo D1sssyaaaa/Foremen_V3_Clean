@@ -48,6 +48,13 @@ export interface CostObject {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  customer_name?: string | null;
+  stats?: {
+    plan: { materials: number; labor: number; total: number };
+    fact: { materials: number; labor: number; total: number };
+    balance: { materials: number; labor: number; total: number };
+    margin_pct: { materials: number; labor: number };
+  };
 }
 
 // УПД
@@ -132,4 +139,18 @@ export interface CostAnalytics {
   labor_costs: number;
   period_start: string;
   period_end: string;
+}
+
+export interface ObjectCostSummary {
+  object_id: number;
+  object_name: string;
+  total_labor_cost: number;
+  total_equipment_cost: number;
+  total_material_cost: number;
+  total_cost: number;
+  contract_amount: number | null;
+  remaining_budget: number | null;
+  budget_utilization_percent: number | null;
+  planned_labor_cost: number | null;
+  planned_material_cost: number | null;
 }

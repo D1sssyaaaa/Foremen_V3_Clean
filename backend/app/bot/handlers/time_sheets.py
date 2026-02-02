@@ -1,10 +1,12 @@
-"""Хэндлеры для подачи табелей РТБ - комбинированный вариант"""
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery, BufferedInputFile
+from aiogram.types import Message, CallbackQuery, BufferedInputFile, WebAppInfo
 from aiogram.fsm.context import FSMContext
 from datetime import datetime, date
 import io
 import re
+import json
+import urllib.parse
+from sqlalchemy.future import select
 
 from app.bot.states import TimeSheetStates
 from app.bot.keyboards import (
@@ -15,9 +17,14 @@ from app.bot.keyboards import (
     get_objects_keyboard,
     get_add_worker_keyboard,
     get_period_keyboard,
-    get_skip_comment_keyboard
+    get_skip_comment_keyboard,
+    get_webapp_keyboard
 )
 from app.bot.utils import APIClient
+from app.core.database import AsyncSessionLocal
+from app.core.database import AsyncSessionLocal
+from app.models import SavedWorker, User
+from app.bot.config import config
 
 router = Router()
 
@@ -69,22 +76,63 @@ def format_hours_summary(workers: list, hours_data: dict) -> str:
 
 @router.message(F.text == "📊 Подать табель РТБ")
 async def start_timesheet(message: Message, state: FSMContext):
-    """Начало подачи табеля - выбор способа"""
+    """Начало подачи табеля - через Web App"""
     # Сохраняем токен если есть
     data = await state.get_data()
     token = data.get("token")
     
-    await state.clear()
-    if token:
-        await state.update_data(token=token)
+    # Получаем объекты
+    client = APIClient(token)
+    try:
+        # Если токена нет, пробуем авторизоваться
+        if not token:
+            print(f"DEBUG: Token missing, attempting auto-login for {message.from_user.id}")
+            new_token = await client.login_telegram(message.from_user.id)
+            if new_token:
+                token = new_token
+                await state.update_data(token=token)
+                client.token = token # Update client token
+                print("DEBUG: Auto-login successful")
+            else:
+                print("DEBUG: Auto-login failed")
+                await message.answer("⚠️ Вы не авторизованы. Используйте /start.")
+                return 
+
+        print(f"DEBUG: Fetching objects with token: {token[:10]}...")
+        # NOTE: get_objects uses self.client.get but does NOT take `token` param in method (it uses self.token)
+        # However, earlier code showed usage `objects = await client.get_objects()` which is correct
+        objects = await client.get_objects()
+        print(f"DEBUG: Fetched {len(objects)} objects")
+    except Exception as e:
+        print(f"ERROR getting objects: {e}")
+        # await message.answer(f"⚠️ Ошибка получения объектов: {str(e)}")
+        objects = []
+    finally:
+        await client.close()
+
+    # Формируем список имен объектов для URL
+    # Передаем: "Объект 1,Объект 2"
+    obj_names = [o.get("name", "Unknown") for o in objects]
+    obj_names_str = ",".join(obj_names)
+    
+    # Кодируем для URL
+    params = {"objects": obj_names_str}
+    query_string = urllib.parse.urlencode(params) 
+    
+    # Итоговый URL
+    full_url = f"{config.web_app_url}?v=3.5&{query_string}"
+    
+    # Использование ReplyKeyboard для поддержки tg.sendData
+    from app.bot.keyboards import get_webapp_reply_keyboard
     
     await message.answer(
-        "📊 <b>Подача табеля РТБ</b>\n\n"
-        "Выберите способ подачи табеля:",
+        "📊 <b>Подача табеля РТБ (V3 Wizard)</b>\n\n"
+        "👇 <b>Нажмите кнопку ВНИЗУ ЭКРАНА</b> (на клавиатуре), чтобы открыть форму:",
         parse_mode="HTML",
-        reply_markup=get_timesheet_method_keyboard()
+        reply_markup=get_webapp_reply_keyboard(full_url)
     )
-    await state.set_state(TimeSheetStates.select_method)
+    # Состояние можно не ставить, т.к. ответ придет в любом состоянии или без него
+
 
 
 # =============================================================================
@@ -126,8 +174,179 @@ async def send_template(callback: CallbackQuery, state: FSMContext):
     await callback.answer("Шаблон отправлен!")
 
 
+    # Состояние можно не ставить, т.к. ответ придет в любом состоянии или без него
+
+
+@router.message(F.web_app_data)
+async def process_webapp_data(message: Message, state: FSMContext):
+    """Обработка данных из Web App"""
+    try:
+        data = json.loads(message.web_app_data.data)
+        print(f"DEBUG: Received parsed web_app_data: {data}")
+        
+        # Проверка типа данных
+        data_type = data.get('type')
+        if data_type not in ['rtb_submission', 'rtb_submission_v2', 'rtb_batch_submission']:
+            return
+            
+        object_name = data.get('object')
+        
+        # Начинаем работу с БД
+        async with AsyncSessionLocal() as session:
+            # 1. Получаем пользователя (прораба) по Telegram ID
+            stmt = select(User).where(User.telegram_chat_id == message.chat.id)
+            result = await session.execute(stmt)
+            user = result.scalars().first()
+            
+            if not user:
+                await message.answer("❌ Ошибка: пользователь не найден. Пройдите авторизацию /login.")
+                return
+
+            # 2. Ищем или создаем Бригаду пользователя
+            from app.models import Brigade, BrigadeMember, CostObject, TimeSheet, TimeSheetItem, SavedWorker
+            
+            # Получаем активную бригаду
+            stmt = select(Brigade).where(Brigade.foreman_id == user.id, Brigade.is_active == True)
+            result = await session.execute(stmt)
+            brigade = result.scalars().first()
+            
+            if not brigade:
+                brigade = Brigade(foreman_id=user.id, name=f"Бригада {user.username}")
+                session.add(brigade)
+                await session.flush()
+                
+            # 3. Находим Объект
+            stmt = select(CostObject).where(CostObject.name == object_name)
+            result = await session.execute(stmt)
+            cost_object = result.scalars().first()
+            
+            if not cost_object:
+                stmt = select(CostObject).where(CostObject.code == object_name)
+                result = await session.execute(stmt)
+                cost_object = result.scalars().first()
+                
+            if not cost_object:
+                await message.answer(f"❌ Объект '{object_name}' не найден в системе.")
+                return
+
+            # Helper function
+            total_items_created = 0
+            
+            async def process_entry(date_obj, w_name, w_hours):
+                nonlocal total_items_created
+                # Find/Create Member
+                stmt = select(BrigadeMember).where(BrigadeMember.brigade_id == brigade.id, BrigadeMember.full_name == w_name)
+                res = await session.execute(stmt)
+                member = res.scalars().first()
+                
+                if not member:
+                    member = BrigadeMember(brigade_id=brigade.id, full_name=w_name)
+                    session.add(member)
+                    await session.flush()
+            
+                # Update Saved Worker
+                stmt = select(SavedWorker).where(SavedWorker.foreman_id == user.id, SavedWorker.name == w_name)
+                res = await session.execute(stmt)
+                if not res.scalars().first():
+                    session.add(SavedWorker(foreman_id=user.id, name=w_name))
+
+                # Create TimeSheet (Daily)
+                ts = TimeSheet(
+                    brigade_id=brigade.id,
+                    period_start=date_obj,
+                    period_end=date_obj,
+                    status="DRAFT", 
+                    notes="WebApp V2"
+                )
+                session.add(ts)
+                await session.flush()
+                
+                item = TimeSheetItem(
+                    time_sheet_id=ts.id,
+                    member_id=member.id,
+                    date=date_obj,
+                    cost_object_id=cost_object.id,
+                    hours=float(w_hours)
+                )
+                session.add(item)
+                total_items_created += 1
+
+            # --- V1 Parsing ---
+            if data_type == 'rtb_submission':
+                date_str = data.get('date')
+                worker_names = data.get('workers')
+                hours = float(data.get('hours', 0))
+                work_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+                for w_name in worker_names:
+                    await process_entry(work_date, w_name, hours)
+
+            # --- V2 Parsing (Range + Individual) ---
+            elif data_type == 'rtb_submission_v2':
+                start_str = data.get('start_date')
+                end_str = data.get('end_date')
+                workers_data = data.get('workers')
+                
+                s_date = datetime.strptime(start_str, "%Y-%m-%d").date()
+                e_date = datetime.strptime(end_str, "%Y-%m-%d").date()
+                
+                from datetime import timedelta
+                delta = (e_date - s_date).days
+                
+                for i in range(delta + 1):
+                    current = s_date + timedelta(days=i)
+                    for w in workers_data:
+                        try:
+                            w_hours = float(w.get('hours', 8))
+                        except:
+                            w_hours = 8.0
+                        await process_entry(current, w['name'], w_hours)
+
+            # --- V3 Parsing (Batch / Wizard) ---
+            elif data_type == 'rtb_batch_submission':
+                entries = data.get('entries', []) # List of {date, workers}
+                print(f"DEBUG: Processing batch with {len(entries)} days")
+                
+                for entry in entries:
+                    date_str = entry.get('date')
+                    day_workers = entry.get('workers', [])
+                    
+                    work_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+                    
+                    for w in day_workers:
+                        try:
+                            w_hours = float(w.get('hours', 8))
+                        except:
+                            w_hours = 8.0
+                        await process_entry(work_date, w['name'], w_hours)
+
+            await session.commit()
+            
+            # Determine period for message
+            period_str = ""
+            if data_type == 'rtb_batch_submission':
+                dates = [e['date'] for e in entries]
+                if dates:
+                    period_str = f"{min(dates)} - {max(dates)}"
+            else:
+                period_str = f"{data.get('start_date', '')} - {data.get('end_date', '')}"
+
+            await message.answer(
+                f"✅ <b>Отчет принят!</b>\n"
+                f"📅 Период: {period_str}\n"
+                f"🏗 Объект: {object_name}\n"
+                f"📝 Записей создано: {total_items_created}",
+                parse_mode="HTML",
+                reply_markup=get_main_menu_keyboard()
+            )
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        await message.answer(f"❌ Произошла ошибка при сохранении: {str(e)}")
+
+
 # =============================================================================
-# СПОСОБ 2: Загрузка Excel
+# СПОСОБ 1: Скачать шаблон (Deprecated but kept)
 # =============================================================================
 
 @router.callback_query(F.data == "ts_method:upload", TimeSheetStates.select_method)
@@ -625,109 +844,3 @@ async def process_confirm_yes(callback: CallbackQuery, state: FSMContext):
             "❌ Ошибка авторизации. Попробуйте заново.",
             reply_markup=get_main_menu_keyboard()
         )
-        await state.clear()
-        await callback.answer()
-        return
-    
-    api = APIClient(token)
-    
-    try:
-        method = data.get("method", "upload")
-        
-        if method == "upload":
-            # Отправляем файл
-            # TODO: реализовать upload_timesheet в API
-            result_text = (
-                "✅ <b>Табель РТБ отправлен!</b>\n\n"
-                f"📎 Файл: {data.get('file_name')}\n\n"
-                "Ваш табель принят на проверку.\n"
-                "HR-менеджер проверит данные и укажет ставки."
-            )
-        else:
-            # Отправляем данные ручного ввода
-            timesheet_data = {
-                "cost_object_id": data.get("cost_object_id"),
-                "period_start": data.get("period_start"),
-                "period_end": data.get("period_end"),
-                "workers": data.get("workers", []),
-                "hours_data": data.get("hours_data", {}),
-                "notes": data.get("comment")
-            }
-            
-            # TODO: вызов API create_timesheet
-            # result = await api.create_timesheet(timesheet_data)
-            
-            workers = data.get("workers", [])
-            hours_data = data.get("hours_data", {})
-            total_hours = sum(
-                sum(h.values()) if isinstance(h, dict) else 0 
-                for h in hours_data.values()
-            )
-            
-            result_text = (
-                "✅ <b>Табель РТБ отправлен!</b>\n\n"
-                f"👥 Работников: {len(workers)}\n"
-                f"⏱️ Всего часов: {total_hours}\n\n"
-                "Ваш табель принят на проверку.\n"
-                "HR-менеджер проверит данные и укажет ставки."
-            )
-        
-        await callback.message.edit_text(
-            result_text,
-            parse_mode="HTML",
-            reply_markup=get_main_menu_keyboard()
-        )
-        
-    except Exception as e:
-        await callback.message.edit_text(
-            f"❌ <b>Ошибка при отправке табеля:</b>\n\n{str(e)}",
-            parse_mode="HTML",
-            reply_markup=get_main_menu_keyboard()
-        )
-    finally:
-        await api.close()
-    
-    # Сохраняем токен при очистке
-    await state.clear()
-    if token:
-        await state.update_data(token=token)
-    
-    await callback.answer()
-
-
-@router.callback_query(F.data == "confirm_no", TimeSheetStates.confirm)
-async def process_confirm_no(callback: CallbackQuery, state: FSMContext):
-    """Отмена отправки табеля"""
-    token = (await state.get_data()).get("token")
-    
-    await callback.message.edit_text(
-        "❌ Отправка табеля отменена",
-        reply_markup=get_main_menu_keyboard()
-    )
-    
-    await state.clear()
-    if token:
-        await state.update_data(token=token)
-    
-    await callback.answer()
-
-
-# =============================================================================
-# ОТМЕНА на любом этапе
-# =============================================================================
-
-@router.callback_query(F.data == "cancel")
-async def cancel_timesheet(callback: CallbackQuery, state: FSMContext):
-    """Отмена на любом этапе"""
-    token = (await state.get_data()).get("token")
-    
-    await callback.message.edit_text(
-        "❌ Операция отменена",
-        reply_markup=get_main_menu_keyboard()
-    )
-    
-    await state.clear()
-    if token:
-        await state.update_data(token=token)
-    
-    await callback.answer()

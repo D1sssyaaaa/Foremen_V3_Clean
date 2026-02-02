@@ -14,6 +14,7 @@ class BotConfig:
     api_base_url: str
     webhook_url: str | None = None
     webhook_path: str = "/bot/webhook"
+    web_app_url: str = "https://D1sssyaaaa.github.io/Foremen_test/index.html"
     
     @classmethod
     def from_env(cls) -> "BotConfig":
@@ -27,12 +28,14 @@ class BotConfig:
         
         api_base_url = os.getenv("API_BASE_URL", "http://localhost:8000/api/v1")
         webhook_url = os.getenv("TELEGRAM_WEBHOOK_URL")
+        web_app_url = os.getenv("TELEGRAM_WEB_APP_URL", "https://D1sssyaaaa.github.io/Foremen_test/index.html")
         
         return cls(
             token=token,
             admin_ids=admin_ids,
             api_base_url=api_base_url,
-            webhook_url=webhook_url
+            webhook_url=webhook_url,
+            web_app_url=web_app_url
         )
 
 

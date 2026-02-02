@@ -85,7 +85,9 @@ class AnalyticsService:
                 'total_cost': costs['total'],
                 'contract_amount': obj.contract_amount,
                 'remaining_budget': remaining_budget,
-                'budget_utilization_percent': budget_utilization
+                'budget_utilization_percent': budget_utilization,
+                'planned_labor_cost': obj.labor_amount,
+                'planned_material_cost': obj.material_amount
             })
         
         return summary
@@ -531,26 +533,27 @@ class AnalyticsService:
     
     async def get_top_objects_by_deliveries(self, limit: int = 5) -> List[dict]:
         """
-        Получение топ объектов по доставкам материалов
+        Получение топ объектов по материалам (из УПД)
         
         Args:
             limit: Количество объектов (по умолчанию 5)
         
         Returns:
-            Список объектов с суммами доставок
+            Список объектов с суммами затрат на материалы
         """
-        from app.models import Delivery
+        from app.models import MaterialCost
         
+        # Используем MaterialCost (УПД) так как таблица Delivery пуста
         query = select(
             CostObject.id,
             CostObject.name,
-            func.coalesce(func.sum(Delivery.total_amount), 0).label('deliveries')
+            func.coalesce(func.sum(MaterialCost.total_amount), 0).label('deliveries')
         ).outerjoin(
-            Delivery, CostObject.id == Delivery.cost_object_id
+            MaterialCost, CostObject.id == MaterialCost.cost_object_id
         ).group_by(
             CostObject.id, CostObject.name
         ).order_by(
-            func.coalesce(func.sum(Delivery.total_amount), 0).desc()
+            func.coalesce(func.sum(MaterialCost.total_amount), 0).desc()
         ).limit(limit)
         
         result = await self.db.execute(query)

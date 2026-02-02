@@ -4,7 +4,8 @@ from aiogram.types import (
     ReplyKeyboardMarkup,
     KeyboardButton,
     InlineKeyboardMarkup,
-    InlineKeyboardButton
+    InlineKeyboardButton,
+    WebAppInfo
 )
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 
@@ -129,12 +130,24 @@ def get_objects_keyboard(objects: list) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+
 def get_register_keyboard() -> InlineKeyboardMarkup:
-    """Клавиатура для регистрации"""
+    """Клавиатура для начала регистрации"""
     builder = InlineKeyboardBuilder()
     builder.row(
         InlineKeyboardButton(text="📝 Зарегистрироваться", callback_data="register_start")
     )
+    return builder.as_markup()
+
+
+def get_role_selection_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура выбора роли при регистрации"""
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="👷 Бригадир", callback_data="role:FOREMAN"))
+    builder.row(InlineKeyboardButton(text="🚜 Менеджер по технике", callback_data="role:EQUIPMENT_MANAGER"))
+    builder.row(InlineKeyboardButton(text="📦 Менеджер по снабжению", callback_data="role:MATERIALS_MANAGER"))
+    builder.row(InlineKeyboardButton(text="💰 Бухгалтер", callback_data="role:ACCOUNTANT"))
+    builder.row(InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_registration"))
     return builder.as_markup()
 
 
@@ -285,4 +298,33 @@ def get_period_keyboard() -> InlineKeyboardMarkup:
     
     builder.row(InlineKeyboardButton(text="📝 Ввести вручную", callback_data="period:custom"))
     builder.row(InlineKeyboardButton(text="❌ Отмена", callback_data="cancel"))
+    return builder.as_markup()
+
+
+def get_webapp_keyboard(url: str) -> InlineKeyboardMarkup:
+    """Клавиатура с кнопкой Web App"""
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="📅 Заполнить табель", web_app=WebAppInfo(url=url))
+    )
+    return builder.as_markup()
+
+
+def get_webapp_reply_keyboard(url: str) -> ReplyKeyboardMarkup:
+    """Клавиатура с кнопкой Web App (Reply) - нужна для tg.sendData"""
+    builder = ReplyKeyboardBuilder()
+    builder.row(
+        KeyboardButton(text="📅 Заполнить табель", web_app=WebAppInfo(url=url))
+    )
+    # Add back button so user isn't stuck
+    builder.row(KeyboardButton(text="❌ Отмена"))
+    return builder.as_markup(resize_keyboard=True)
+
+
+def get_manager_dashboard_keyboard(url: str) -> InlineKeyboardMarkup:
+    """Клавиатура для открытия панели руководителя"""
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="📊 Открыть панель руководителя", web_app=WebAppInfo(url=url))
+    )
     return builder.as_markup()

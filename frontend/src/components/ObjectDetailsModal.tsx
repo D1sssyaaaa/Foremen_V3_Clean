@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { apiClient } from '../api/client';
 
 interface ObjectStats {
@@ -30,21 +30,43 @@ interface ObjectStats {
   };
 }
 
-interface CostDetail {
+interface MaterialItem {
   id: number;
-  date: string;
+  name: string;
+  quantity: number;
+  unit: string;
+  price: number;
+  amount: number;
+}
+
+interface CostDetail {
+  id: number | string;
+  date: string | null;
   amount: number;
   description: string;
-  reference_id?: number;
-  reference_type?: string;
+  document_number?: string;
+  type?: string;
+  hours?: number;
+  items?: MaterialItem[];
+}
+
+interface CostSummary {
+  materials_total: number;
+  equipment_deliveries_total: number;
+  labor_total: number;
+  other_total: number;
+  work_total: number;
+  grand_total: number;
 }
 
 interface ObjectCosts {
   object_id: number;
   object_name: string;
+  summary: CostSummary;
   materials: CostDetail[];
-  equipment: CostDetail[];
+  equipment_deliveries: CostDetail[];
   labor: CostDetail[];
+  other: CostDetail[];
 }
 
 interface ObjectDetailsModalProps {
@@ -59,6 +81,16 @@ export function ObjectDetailsModal({ objectId, onClose, onViewFull }: ObjectDeta
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showDetails, setShowDetails] = useState(false);
+  const [expandedRows, setExpandedRows] = useState<Set<string | number>>(new Set());
+
+  const toggleRow = (id: string | number) => {
+    setExpandedRows(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   useEffect(() => {
     loadStats();
@@ -149,221 +181,220 @@ export function ObjectDetailsModal({ objectId, onClose, onViewFull }: ObjectDeta
 
         {/* Body */}
         <div style={bodyStyle}>
-          {/* Бюджет и использование */}
-          <div style={sectionStyle}>
-            <h3 style={sectionTitleStyle}>💰 Бюджет и затраты</h3>
-            <div style={{ marginBottom: '15px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
-                <span>Общий бюджет:</span>
-                <strong>{stats.budget.total_budget.toLocaleString('ru')} ₽</strong>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
-                <span>Использовано:</span>
-                <strong style={{ color: budgetUsage > 90 ? '#e74c3c' : '#27ae60' }}>
-                  {stats.total_costs.toLocaleString('ru')} ₽
-                </strong>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
-                <span>Остаток:</span>
-                <strong>{(stats.budget.total_budget - stats.total_costs).toLocaleString('ru')} ₽</strong>
-              </div>
-              {/* Progress bar */}
-              <div style={progressBarBgStyle}>
-                <div
-                  style={{
-                    ...progressBarFillStyle,
-                    width: `${Math.min(budgetUsage, 100)}%`,
-                    backgroundColor: budgetUsage > 90 ? '#e74c3c' : budgetUsage > 70 ? '#f39c12' : '#27ae60'
-                  }}
-                />
-              </div>
-              <div style={{ textAlign: 'center', marginTop: '5px', fontSize: '12px', color: '#7f8c8d' }}>
-                {budgetUsage.toFixed(1)}% использовано
-              </div>
+          {/* Новый Финансовый Дашборд */}
+          {/* Финансовая таблица План/Факт */}
+          {costs && stats && (
+            <div style={{ marginBottom: '30px', overflow: 'hidden', borderRadius: '8px', border: '1px solid #e0e0e0', backgroundColor: '#fff' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right' }}>
+                <thead>
+                  <tr style={{ backgroundColor: '#f8f9fa', color: '#7f8c8d', fontSize: '12px', textTransform: 'uppercase' }}>
+                    <th style={{ padding: '12px 16px', textAlign: 'left' }}>Категория</th>
+                    <th style={{ padding: '12px 16px' }}>Сумма по договору</th>
+                    <th style={{ padding: '12px 16px' }}>Факт затрат</th>
+                    <th style={{ padding: '12px 16px' }}>Разница</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {/* Строка Материалы */}
+                  <tr style={{ borderBottom: '1px solid #ecf0f1' }}>
+                    <td style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '500' }}>Материалы</td>
+                    <td style={{ padding: '12px 16px' }}>{stats.budget.material_budget.toLocaleString('ru')} ₽</td>
+                    <td style={{ padding: '12px 16px', color: '#2c3e50' }}>{costs.summary.materials_total.toLocaleString('ru')} ₽</td>
+                    <td style={{ padding: '12px 16px', fontWeight: 'bold', color: (stats.budget.material_budget - costs.summary.materials_total) >= 0 ? '#27ae60' : '#e74c3c' }}>
+                      {(stats.budget.material_budget - costs.summary.materials_total).toLocaleString('ru')} ₽
+                    </td>
+                  </tr>
+                  {/* Строка Работы */}
+                  <tr style={{ borderBottom: '1px solid #ecf0f1' }}>
+                    <td style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '500' }}>Работы</td>
+                    <td style={{ padding: '12px 16px' }}>{stats.budget.labor_budget.toLocaleString('ru')} ₽</td>
+                    <td style={{ padding: '12px 16px', color: '#2c3e50' }}>{costs.summary.work_total.toLocaleString('ru')} ₽</td>
+                    <td style={{ padding: '12px 16px', fontWeight: 'bold', color: (stats.budget.labor_budget - costs.summary.work_total) >= 0 ? '#27ae60' : '#e74c3c' }}>
+                      {(stats.budget.labor_budget - costs.summary.work_total).toLocaleString('ru')} ₽
+                    </td>
+                  </tr>
+                  {/* Итого */}
+                  <tr style={{ backgroundColor: '#fdfdfd', fontWeight: 'bold', fontSize: '15px' }}>
+                    <td style={{ padding: '16px', textAlign: 'left' }}>ИТОГО</td>
+                    <td style={{ padding: '16px' }}>{stats.budget.total_budget.toLocaleString('ru')} ₽</td>
+                    <td style={{ padding: '16px' }}>{costs.summary.grand_total.toLocaleString('ru')} ₽</td>
+                    <td style={{ padding: '16px', color: (stats.budget.total_budget - costs.summary.grand_total) >= 0 ? '#27ae60' : '#e74c3c' }}>
+                      {(stats.budget.total_budget - costs.summary.grand_total).toLocaleString('ru')} ₽
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
-          </div>
+          )}
 
-          {/* Статистика по категориям */}
-          <div style={statsGridStyle}>
-            {/* Материалы */}
-            <div style={statCardStyle}>
-              <div style={{ fontSize: '24px', marginBottom: '5px' }}>📦</div>
-              <div style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '5px' }}>
-                {stats.material_requests.count}
-              </div>
-              <div style={{ color: '#7f8c8d', fontSize: '14px', marginBottom: '5px' }}>Заявок на материалы</div>
-              <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#3498db' }}>
-                {stats.material_requests.total.toLocaleString('ru')} ₽
-              </div>
-            </div>
-
-            {/* Техника */}
-            <div style={statCardStyle}>
-              <div style={{ fontSize: '24px', marginBottom: '5px' }}>🚜</div>
-              <div style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '5px' }}>
-                {stats.equipment_orders.count}
-              </div>
-              <div style={{ color: '#7f8c8d', fontSize: '14px', marginBottom: '5px' }}>Заявок на технику</div>
-              <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#3498db' }}>
-                {stats.equipment_orders.total.toLocaleString('ru')} ₽
-              </div>
-            </div>
-
-            {/* РТБ */}
-            <div style={statCardStyle}>
-              <div style={{ fontSize: '24px', marginBottom: '5px' }}>👷</div>
-              <div style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '5px' }}>
-                {stats.timesheets.count}
-              </div>
-              <div style={{ color: '#7f8c8d', fontSize: '14px', marginBottom: '5px' }}>Табелей РТБ</div>
-              <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#3498db' }}>
-                {stats.timesheets.labor_costs_total.toLocaleString('ru')} ₽
-              </div>
-            </div>
-
-            {/* УПД */}
-            <div style={statCardStyle}>
-              <div style={{ fontSize: '24px', marginBottom: '5px' }}>📄</div>
-              <div style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '5px' }}>
-                {stats.upd_documents.count}
-              </div>
-              <div style={{ color: '#7f8c8d', fontSize: '14px', marginBottom: '5px' }}>УПД документов</div>
-              <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#3498db' }}>
-                {stats.upd_documents.total.toLocaleString('ru')} ₽
-              </div>
-            </div>
-          </div>
-
-          {/* Распределение затрат (простой график) */}
-          <div style={sectionStyle}>
-            <h3 style={sectionTitleStyle}>📊 Распределение затрат</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {stats.material_requests.total > 0 && (
-                <CostBar
-                  label="Материалы"
-                  value={stats.material_requests.total}
-                  total={stats.total_costs}
-                  color="#3498db"
-                />
-              )}
-              {stats.equipment_orders.total > 0 && (
-                <CostBar
-                  label="Техника"
-                  value={stats.equipment_orders.total}
-                  total={stats.total_costs}
-                  color="#f39c12"
-                />
-              )}
-              {stats.timesheets.labor_costs_total > 0 && (
-                <CostBar
-                  label="РТБ"
-                  value={stats.timesheets.labor_costs_total}
-                  total={stats.total_costs}
-                  color="#27ae60"
-                />
-              )}
-              {stats.upd_documents.total > 0 && (
-                <CostBar
-                  label="УПД"
-                  value={stats.upd_documents.total}
-                  total={stats.total_costs}
-                  color="#9b59b6"
-                />
-              )}
-            </div>
-          </div>
-
-          {/* Детальные таблицы затрат */}
+          {/* Свод и мини-таблицы затрат (как в Google Sheets) */}
           {showDetails && costs && (
             <div style={sectionStyle}>
-              <h3 style={sectionTitleStyle}>📋 Детализация затрат</h3>
 
-              {/* Материалы */}
-              {costs.materials.length > 0 && (
-                <div style={{ marginBottom: '20px' }}>
-                  <h4 style={{ fontSize: '16px', marginBottom: '10px', color: '#2c3e50' }}>📦 Материалы</h4>
-                  <div style={{ overflowX: 'auto' }}>
-                    <table style={tableStyle}>
-                      <thead>
-                        <tr>
-                          <th style={thStyle}>Дата</th>
-                          <th style={thStyle}>Описание</th>
-                          <th style={thStyle}>Сумма</th>
+              {/* 4 мини-таблицы в сетке 2x2 */}
+              <div style={miniTablesGridStyle}>
+                {/* 1. Зарплата рабочих (РТБ) */}
+                <div style={miniTableContainerStyle}>
+                  <div style={miniTableHeaderStyle}>ЗАРПЛАТА РАБОЧИХ</div>
+                  <table style={miniTableStyle}>
+                    <thead>
+                      <tr>
+                        <th style={miniThStyle}>ВИД РАБОТ</th>
+                        <th style={miniThStyle}>ДАТА</th>
+                        <th style={miniThStyle}>СУММА ОПЛАТЫ</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {costs.labor.length > 0 ? costs.labor.slice(0, 10).map((cost) => (
+                        <tr key={cost.id}>
+                          <td style={miniTdStyle}>{cost.description || '—'}</td>
+                          <td style={miniTdStyle}>{cost.date || '—'}</td>
+                          <td style={miniTdStyle}>{cost.amount.toLocaleString('ru')} ₽</td>
                         </tr>
-                      </thead>
-                      <tbody>
-                        {costs.materials.map((cost) => (
-                          <tr key={cost.id}>
-                            <td style={tdStyle}>{new Date(cost.date).toLocaleDateString('ru')}</td>
-                            <td style={tdStyle}>{cost.description || '—'}</td>
-                            <td style={tdStyle}>{cost.amount.toLocaleString('ru')} ₽</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                      )) : (
+                        <tr><td colSpan={3} style={{ ...miniTdStyle, textAlign: 'center', color: '#999' }}>Нет данных</td></tr>
+                      )}
+                    </tbody>
+                    <tfoot>
+                      <tr style={{ backgroundColor: '#f0f0f0' }}>
+                        <td colSpan={2} style={{ ...miniTdStyle, fontWeight: 'bold' }}>сумма</td>
+                        <td style={{ ...miniTdStyle, fontWeight: 'bold' }}>{costs.summary.labor_total.toLocaleString('ru')} ₽</td>
+                      </tr>
+                    </tfoot>
+                  </table>
                 </div>
-              )}
 
-              {/* Техника */}
-              {costs.equipment.length > 0 && (
-                <div style={{ marginBottom: '20px' }}>
-                  <h4 style={{ fontSize: '16px', marginBottom: '10px', color: '#2c3e50' }}>🚜 Техника</h4>
-                  <div style={{ overflowX: 'auto' }}>
-                    <table style={tableStyle}>
-                      <thead>
-                        <tr>
-                          <th style={thStyle}>Дата</th>
-                          <th style={thStyle}>Описание</th>
-                          <th style={thStyle}>Сумма</th>
+                {/* 2. Иные затраты */}
+                <div style={miniTableContainerStyle}>
+                  <div style={miniTableHeaderStyle}>ИНЫЕ ЗАТРАТЫ</div>
+                  <table style={miniTableStyle}>
+                    <thead>
+                      <tr>
+                        <th style={miniThStyle}>ВИД ЗАТРАТ</th>
+                        <th style={miniThStyle}>ДАТА</th>
+                        <th style={miniThStyle}>СУММА ОПЛАТЫ</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {costs.other.length > 0 ? costs.other.slice(0, 10).map((cost) => (
+                        <tr key={cost.id}>
+                          <td style={miniTdStyle}>{cost.description || '—'}</td>
+                          <td style={miniTdStyle}>{cost.date ? new Date(cost.date).toLocaleDateString('ru') : '—'}</td>
+                          <td style={miniTdStyle}>{cost.amount.toLocaleString('ru')} ₽</td>
                         </tr>
-                      </thead>
-                      <tbody>
-                        {costs.equipment.map((cost) => (
-                          <tr key={cost.id}>
-                            <td style={tdStyle}>{new Date(cost.date).toLocaleDateString('ru')}</td>
-                            <td style={tdStyle}>{cost.description || '—'}</td>
-                            <td style={tdStyle}>{cost.amount.toLocaleString('ru')} ₽</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                      )) : (
+                        <tr><td colSpan={3} style={{ ...miniTdStyle, textAlign: 'center', color: '#999' }}>Нет данных</td></tr>
+                      )}
+                    </tbody>
+                    <tfoot>
+                      <tr style={{ backgroundColor: '#f0f0f0' }}>
+                        <td colSpan={2} style={{ ...miniTdStyle, fontWeight: 'bold' }}>сумма</td>
+                        <td style={{ ...miniTdStyle, fontWeight: 'bold' }}>{costs.summary.other_total.toLocaleString('ru')} ₽</td>
+                      </tr>
+                    </tfoot>
+                  </table>
                 </div>
-              )}
 
-              {/* РТБ */}
-              {costs.labor.length > 0 && (
-                <div style={{ marginBottom: '20px' }}>
-                  <h4 style={{ fontSize: '16px', marginBottom: '10px', color: '#2c3e50' }}>👷 РТБ</h4>
-                  <div style={{ overflowX: 'auto' }}>
-                    <table style={tableStyle}>
-                      <thead>
-                        <tr>
-                          <th style={thStyle}>Дата</th>
-                          <th style={thStyle}>Описание</th>
-                          <th style={thStyle}>Сумма</th>
+                {/* 3. Техника и доставки */}
+                <div style={miniTableContainerStyle}>
+                  <div style={miniTableHeaderStyle}>ОПЛАТА СПЕЦТЕХНИКИ, ДОСТАВОК</div>
+                  <table style={miniTableStyle}>
+                    <thead>
+                      <tr>
+                        <th style={miniThStyle}>ВИД РАБОТЫ ТЕХНИКИ</th>
+                        <th style={miniThStyle}>ДАТА</th>
+                        <th style={miniThStyle}>СУММА ОПЛАТЫ</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {costs.equipment_deliveries.length > 0 ? costs.equipment_deliveries.slice(0, 10).map((cost) => (
+                        <tr key={cost.id}>
+                          <td style={miniTdStyle}>{cost.description || '—'}</td>
+                          <td style={miniTdStyle}>{cost.date ? new Date(cost.date).toLocaleDateString('ru') : '—'}</td>
+                          <td style={miniTdStyle}>{cost.amount.toLocaleString('ru')} ₽</td>
                         </tr>
-                      </thead>
-                      <tbody>
-                        {costs.labor.map((cost) => (
-                          <tr key={cost.id}>
-                            <td style={tdStyle}>{new Date(cost.date).toLocaleDateString('ru')}</td>
-                            <td style={tdStyle}>{cost.description || '—'}</td>
-                            <td style={tdStyle}>{cost.amount.toLocaleString('ru')} ₽</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                      )) : (
+                        <tr><td colSpan={3} style={{ ...miniTdStyle, textAlign: 'center', color: '#999' }}>Нет данных</td></tr>
+                      )}
+                    </tbody>
+                    <tfoot>
+                      <tr style={{ backgroundColor: '#f0f0f0' }}>
+                        <td colSpan={2} style={{ ...miniTdStyle, fontWeight: 'bold' }}>сумма</td>
+                        <td style={{ ...miniTdStyle, fontWeight: 'bold' }}>{costs.summary.equipment_deliveries_total.toLocaleString('ru')} ₽</td>
+                      </tr>
+                    </tfoot>
+                  </table>
                 </div>
-              )}
 
-              {costs.materials.length === 0 && costs.equipment.length === 0 && costs.labor.length === 0 && (
-                <div style={{ textAlign: 'center', color: '#7f8c8d', padding: '20px' }}>
-                  Нет детальных записей затрат
+                {/* 4. Закупка материала */}
+                <div style={miniTableContainerStyle}>
+                  <div style={{ ...miniTableHeaderStyle, backgroundColor: '#c6efce' }}>ЗАКУПКА МАТЕРИАЛА</div>
+                  <table style={miniTableStyle}>
+                    <thead>
+                      <tr>
+                        <th style={miniThStyle}>НАИМЕНОВАНИЕ ПОСТАВЩИКА</th>
+                        <th style={miniThStyle}>ДАТА</th>
+                        <th style={miniThStyle}>СУММА ОПЛАТЫ</th>
+                        <th style={miniThStyle}>№ УПД</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {costs.materials.length > 0 ? costs.materials.slice(0, 10).map((cost) => (
+                        <React.Fragment key={cost.id}>
+                          <tr
+                            onClick={() => toggleRow(cost.id)}
+                            style={{ cursor: 'pointer', backgroundColor: expandedRows.has(cost.id) ? '#e8f5e9' : 'transparent' }}
+                          >
+                            <td style={miniTdStyle}>
+                              <span style={{ marginRight: '6px' }}>{expandedRows.has(cost.id) ? '▼' : '▶'}</span>
+                              {cost.description || '—'}
+                            </td>
+                            <td style={miniTdStyle}>{cost.date ? new Date(cost.date).toLocaleDateString('ru') : '—'}</td>
+                            <td style={miniTdStyle}>{cost.amount.toLocaleString('ru')} ₽</td>
+                            <td style={miniTdStyle}>{cost.document_number || '—'}</td>
+                          </tr>
+                          {expandedRows.has(cost.id) && cost.items && cost.items.length > 0 && (
+                            <tr>
+                              <td colSpan={4} style={{ padding: '0 0 0 20px', backgroundColor: '#f5f5f5' }}>
+                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
+                                  <thead>
+                                    <tr style={{ backgroundColor: '#e0e0e0' }}>
+                                      <th style={{ padding: '4px 8px', textAlign: 'left' }}>Наименование</th>
+                                      <th style={{ padding: '4px 8px', textAlign: 'right', width: '80px' }}>Кол-во</th>
+                                      <th style={{ padding: '4px 8px', textAlign: 'left', width: '50px' }}>Ед.</th>
+                                      <th style={{ padding: '4px 8px', textAlign: 'right', width: '100px' }}>Цена</th>
+                                      <th style={{ padding: '4px 8px', textAlign: 'right', width: '100px' }}>Сумма</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {cost.items.map((item) => (
+                                      <tr key={item.id} style={{ borderBottom: '1px solid #ddd' }}>
+                                        <td style={{ padding: '4px 8px' }}>{item.name}</td>
+                                        <td style={{ padding: '4px 8px', textAlign: 'right' }}>{item.quantity}</td>
+                                        <td style={{ padding: '4px 8px' }}>{item.unit}</td>
+                                        <td style={{ padding: '4px 8px', textAlign: 'right' }}>{item.price.toLocaleString('ru')} ₽</td>
+                                        <td style={{ padding: '4px 8px', textAlign: 'right' }}>{item.amount.toLocaleString('ru')} ₽</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      )) : (
+                        <tr><td colSpan={4} style={{ ...miniTdStyle, textAlign: 'center', color: '#999' }}>Нет данных</td></tr>
+                      )}
+                    </tbody>
+                    <tfoot>
+                      <tr style={{ backgroundColor: '#f0f0f0' }}>
+                        <td colSpan={3} style={{ ...miniTdStyle, fontWeight: 'bold' }}>сумма</td>
+                        <td style={{ ...miniTdStyle, fontWeight: 'bold' }}>{costs.summary.materials_total.toLocaleString('ru')} ₽</td>
+                      </tr>
+                    </tfoot>
+                  </table>
                 </div>
-              )}
+              </div>
             </div>
           )}
         </div>
@@ -534,4 +565,65 @@ const thStyle: React.CSSProperties = {
 const tdStyle: React.CSSProperties = {
   padding: '12px',
   borderBottom: '1px solid #dee2e6',
+};
+
+// Mini-tables styles (Google Sheets style)
+const summaryRowStyle: React.CSSProperties = {
+  display: 'flex',
+  gap: '20px',
+  marginBottom: '20px',
+  padding: '15px',
+  backgroundColor: '#f8f9fa',
+  borderRadius: '8px',
+};
+
+const summaryBoxStyle: React.CSSProperties = {
+  flex: 1,
+  padding: '10px 15px',
+  backgroundColor: 'white',
+  borderRadius: '6px',
+  boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+};
+
+const miniTablesGridStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(2, 1fr)',
+  gap: '20px',
+};
+
+const miniTableContainerStyle: React.CSSProperties = {
+  border: '1px solid #ddd',
+  borderRadius: '4px',
+  overflow: 'hidden',
+};
+
+const miniTableHeaderStyle: React.CSSProperties = {
+  backgroundColor: '#fff2cc',
+  padding: '8px 12px',
+  fontWeight: 'bold',
+  fontSize: '12px',
+  textAlign: 'center',
+  borderBottom: '1px solid #ddd',
+};
+
+const miniTableStyle: React.CSSProperties = {
+  width: '100%',
+  borderCollapse: 'collapse',
+  fontSize: '12px',
+};
+
+const miniThStyle: React.CSSProperties = {
+  backgroundColor: '#f0f0f0',
+  padding: '6px 8px',
+  textAlign: 'left',
+  borderBottom: '1px solid #ddd',
+  fontWeight: '600',
+  fontSize: '10px',
+  color: '#333',
+};
+
+const miniTdStyle: React.CSSProperties = {
+  padding: '6px 8px',
+  borderBottom: '1px solid #eee',
+  fontSize: '11px',
 };

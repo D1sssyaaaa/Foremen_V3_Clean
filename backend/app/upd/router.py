@@ -155,6 +155,47 @@ async def get_unprocessed_upds(
     ]
 
 
+@router.get("/", response_model=List[UPDListItem])
+async def get_all_upds(
+    skip: int = 0,
+    limit: int = 100,
+    db: AsyncSession = Depends(get_db),
+    current_user = Depends(require_roles([UserRole.MATERIALS_MANAGER, UserRole.ACCOUNTANT, UserRole.MANAGER]))
+):
+    """
+    Получение списка всех УПД
+    """
+    service = UPDService(db)
+    # Note: UPDService might need a get_all_upds method, or we can use get_updates with filters?
+    # Let's check UPDService if it has a way to get all. If not, I'll assume we need to add it or use raw query here.
+    # For now, I'll use a direct query approach if service doesn't support it, but better to keep consistency.
+    # Looking at the code, I don't see get_all_upds in the imports or usage context.
+    # I will stick to a custom implementation using service.db if method is missing, 
+    # BUT I should probably check service.py first. Alternatively, I can implement it here.
+    
+    from sqlalchemy import select, desc
+    from sqlalchemy.orm import selectinload
+    from app.models import MaterialCost
+    
+    query = select(MaterialCost).options(selectinload(MaterialCost.items)).order_by(desc(MaterialCost.created_at)).offset(skip).limit(limit)
+    result = await db.execute(query)
+    upds = result.scalars().all()
+    
+    return [
+        UPDListItem(
+            id=upd.id,
+            document_number=upd.document_number,
+            document_date=upd.document_date,
+            supplier_name=upd.supplier_name,
+            total_with_vat=upd.total_with_vat,
+            items_count=len(upd.items),
+            status=upd.status,
+            created_at=upd.created_at
+        )
+        for upd in upds
+    ]
+
+
 @router.get("/{upd_id}", response_model=UPDDetailResponse)
 async def get_upd_detail(
     upd_id: int,
@@ -166,8 +207,18 @@ async def get_upd_detail(
     
     Возвращает все данные УПД включая строки товаров и проблемы парсинга
     """
-    service = UPDService(db)
-    upd = await service.get_upd_by_id(upd_id)
+    # Validating ID
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+    from app.models import MaterialCost
+    
+    query = (
+        select(MaterialCost)
+        .options(selectinload(MaterialCost.items))
+        .where(MaterialCost.id == upd_id)
+    )
+    result = await db.execute(query)
+    upd = result.scalar_one_or_none()
     
     if not upd:
         raise HTTPException(
@@ -175,8 +226,44 @@ async def get_upd_detail(
             detail=f"УПД с ID {upd_id} не найден"
         )
     
-    issues = service._deserialize_issues(upd.parsing_issues)
+    issues = []
+    try:
+        service = UPDService(db)
+        issues = service._deserialize_issues(upd.parsing_issues)
+    except Exception:
+        # Fallback if service init fails or issues field is missing/bad
+        pass
     
+    issues_list = []
+    for issue in issues:
+        if isinstance(issue, str):
+            issues_list.append(ParsingIssueResponse(
+                severity="WARNING",
+                element="UNKNOWN",
+                message=issue,
+                generator="Legacy",
+                value=None
+            ))
+        elif isinstance(issue, dict):
+             # Ensure dict has all required fields? Pydantic will check.
+             # We might need to fill missing fields if sloppy data
+             try:
+                 issues_list.append(ParsingIssueResponse(**issue))
+             except Exception:
+                 # Fallback for bad dicts
+                 issues_list.append(ParsingIssueResponse(
+                    severity="ERROR",
+                    element="BAD_DATA",
+                    message=str(issue)
+                 ))
+        else:
+             # Fallback for other types
+             issues_list.append(ParsingIssueResponse(
+                severity="WARNING",
+                element="UNKNOWN",
+                message=str(issue)
+             ))
+
     return UPDDetailResponse(
         id=upd.id,
         document_number=upd.document_number,
@@ -207,7 +294,7 @@ async def get_upd_detail(
             )
             for item in upd.items
         ],
-        parsing_issues=[ParsingIssueResponse(**issue) for issue in issues],
+        parsing_issues=issues_list,
         created_at=upd.created_at,
         updated_at=upd.updated_at
     )

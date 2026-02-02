@@ -54,6 +54,7 @@ class CostObject(Base, TimestampMixin):
     
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), nullable=False)
+    customer_name = Column(String(255), nullable=True)
     code = Column(String(50), unique=True, nullable=False, index=True)
     contract_number = Column(String(100), nullable=True)
     contract_amount = Column(Float, nullable=True)
@@ -107,6 +108,19 @@ class BrigadeMember(Base, TimestampMixin):
     # Связи
     brigade = relationship("Brigade", back_populates="members")
     time_sheet_items = relationship("TimeSheetItem", back_populates="member")
+
+
+class SavedWorker(Base, TimestampMixin):
+    """Сохраненные работники бригадира (для быстрого выбора в WebApp)"""
+    __tablename__ = "saved_workers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    foreman_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(255), nullable=False)  # ФИО или Имя
+    role = Column(String(100), nullable=True)  # Разнорабочий, Мастер и т.д.
+    
+    # Связи
+    foreman = relationship("User", backref="saved_workers")
 
 
 class TimeSheet(Base, TimestampMixin):
@@ -382,6 +396,7 @@ class RegistrationRequest(Base, TimestampMixin):
     phone = Column(String(20), nullable=False)
     telegram_chat_id = Column(String(50), nullable=False, unique=True)
     telegram_username = Column(String(100), nullable=True)
+    requested_role = Column(String(50), nullable=True)  # Запрашиваемая роль
     status = Column(String(20), nullable=False, default=RegistrationRequestStatus.PENDING.value, index=True)
     
     # Кто обработал заявку
@@ -545,6 +560,6 @@ __all__ = [
     "MaterialRequestItem", "MaterialCost", "MaterialCostItem", "CostEntry",
     "RegistrationRequest", "ObjectAccessRequest", "AuditLog", "TelegramNotification",
     "TelegramLinkCode", "Delivery", "LaborCost", "OtherCost", "DeliveryCost",
-    "object_foremen", "UPDDistribution"
+    "object_foremen", "UPDDistribution", "SavedWorker"
 ]
 
