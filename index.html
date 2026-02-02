@@ -429,6 +429,13 @@
                 entries: savedEntries
             };
 
+            // Local Dev Mode check
+            if (!tg.initDataUnsafe || !tg.initDataUnsafe.query_id) {
+                console.log("LOCAL_SUBMISSION:", payload);
+                alert("🛠 ЛОКАЛЬНЫЙ РЕЖИМ\n\nДанные сформированы (см. консоль):\n" + JSON.stringify(payload, null, 2));
+                return;
+            }
+
             try {
                 tg.sendData(JSON.stringify(payload));
             } catch (e) {
