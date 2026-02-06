@@ -784,8 +784,8 @@ async def get_object_estimate(
                 "name": item.name,
                 "unit": item.unit,
                 "quantity": item.quantity,
-                "delivered_quantity": 0.0,  # Заглушка для будущей интеграции УПД
-                "remaining_quantity": item.quantity - 0.0  # Остаток = Кол-во по смете - Отгружено
+                "delivered_quantity": item.ordered_quantity,
+                "remaining_quantity": item.quantity - item.ordered_quantity
             }
             for item in items
         ]
@@ -798,6 +798,10 @@ async def get_object_estimate(
             "name": item.name,
             "unit": item.unit,
             "quantity": item.quantity,
+            "price": item.price,
+            "total_amount": item.total_amount,
+            "delivered_quantity": item.ordered_quantity,
+            "remaining_quantity": item.quantity - item.ordered_quantity,
             "price": item.price,
             "total_amount": item.total_amount,
             "ordered_quantity": item.ordered_quantity,

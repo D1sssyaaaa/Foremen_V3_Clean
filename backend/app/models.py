@@ -207,8 +207,12 @@ class MaterialRequestItem(Base):
     description = Column(Text, nullable=True)  # Описание/примечание к позиции
     distributed_quantity = Column(Float, nullable=False, default=0.0)  # Распределенное количество
     
+    # Optional link to original estimate item
+    estimate_item_id = Column(Integer, ForeignKey("estimate_items.id", ondelete="SET NULL"), nullable=True)
+    
     # Связи
     request = relationship("MaterialRequest", back_populates="items")
+    estimate_item = relationship("EstimateItem")
 
 
 class MaterialCost(Base, TimestampMixin):

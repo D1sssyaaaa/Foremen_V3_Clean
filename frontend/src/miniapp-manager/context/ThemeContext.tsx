@@ -62,14 +62,56 @@ const ThemeContext = createContext<Theme>({ ...darkTheme, toggleTheme: () => { }
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Initialize with passed props or default logic
-  const [themeData, setThemeData] = useState<Omit<Theme, 'toggleTheme'>>(darkTheme);
+  const [themeData, setThemeData] = useState<Omit<Theme, 'toggleTheme'>>(() => {
+    // Check local storage first
+    try {
+      const saved = localStorage.getItem('theme_preference');
+      if (saved) {
+        return saved === 'dark' ? darkTheme : lightTheme;
+      }
+    } catch (e) {
+      console.warn('Failed to read theme preference', e);
+    }
+    return darkTheme;
+  });
 
   const toggleTheme = () => {
-    setThemeData(prev => prev.isDark ? lightTheme : darkTheme);
+    setThemeData(prev => {
+      const nextTheme = prev.isDark ? lightTheme : darkTheme;
+      // Persist
+      try {
+        localStorage.setItem('theme_preference', nextTheme.isDark ? 'dark' : 'light');
+      } catch (e) {
+        console.warn('Failed to save theme preference', e);
+      }
+
+      if (nextTheme.isDark) {
+        document.documentElement.classList.add('dark');
+        WebApp.setHeaderColor('#000000');
+        WebApp.setBackgroundColor('#000000');
+      } else {
+        document.documentElement.classList.remove('dark');
+        WebApp.setHeaderColor('#ffffff');
+        WebApp.setBackgroundColor('#F2F2F7');
+      }
+      return nextTheme;
+    });
   };
 
   useEffect(() => {
-    // Detect Telegram Theme
+    // Sync class on mount/change
+    if (themeData.isDark) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [themeData.isDark]);
+
+  useEffect(() => {
+    // Detect Telegram Theme ONLY if no user preference is saved
+    const saved = localStorage.getItem('theme_preference');
+    if (saved) return; // Skip auto-detection if user manually set preference
+
     try {
       const isTelegram = !!(window as any).Telegram?.WebApp;
       if (isTelegram && WebApp.colorScheme) {
@@ -82,7 +124,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         WebApp.expand();
         WebApp.setHeaderColor(WebApp.colorScheme === 'light' ? '#F2F2F7' : '#000000');
       } else {
-        console.log("Not in Telegram, defaulting to Dark Theme");
+        // Default to dark if not Telegram and no preference
         setThemeData(darkTheme);
       }
     } catch (e) {

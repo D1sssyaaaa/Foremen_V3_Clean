@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Building2, Loader2 } from 'lucide-react';
+import { Building2, Loader2 } from 'lucide-react';
 import { objectsApi, ObjectListItem } from '../api/objectsApi';
 import { IosSection } from '../components/ui-ios';
+import { MiniAppHeader } from '../components/MiniAppHeader';
 
 export const ObjectSelectPage: React.FC = () => {
     const navigate = useNavigate();
@@ -34,15 +35,7 @@ export const ObjectSelectPage: React.FC = () => {
     return (
         <div className="min-h-screen bg-[var(--bg-ios)] pb-safe-bottom font-sans text-[var(--text-primary)]">
             {/* Header */}
-            <div className="sticky top-0 z-50 bg-[var(--bg-ios)]/90 backdrop-blur-xl border-b border-[var(--separator-opaque)] px-4 py-3">
-                <div className="flex items-center justify-between">
-                    <button onClick={() => navigate(-1)} className="text-[var(--blue-ios)] flex items-center">
-                        <ArrowLeft size={22} className="mr-1" /> Назад
-                    </button>
-                    <h1 className="text-[17px] font-semibold">Мои объекты</h1>
-                    <div className="w-[60px]" />
-                </div>
-            </div>
+            <MiniAppHeader title="Мои объекты" />
 
             {/* Content */}
             <div className="p-4 space-y-4">
