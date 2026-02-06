@@ -125,9 +125,7 @@ export function DashboardPage() {
       actions.push({ label: '🚜 Заявки на технику', path: '/equipment-orders', color: '#f39c12' });
     }
 
-    if (user?.roles.some(r => ['ADMIN', 'MANAGER', 'HR_MANAGER'].includes(r))) {
-      actions.push({ label: '📋 Табели РТБ', path: '/time-sheets', color: '#9b59b6' });
-    }
+
 
     actions.push({ label: '📊 Отчёты и аналитика', path: '/analytics', color: '#1abc9c' });
 

@@ -8,11 +8,11 @@ export function ObjectsPage() {
   const [objects, setObjects] = useState<CostObject[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
   const [newObject, setNewObject] = useState({
     name: '',
     customer_name: '',
     contract_number: '',
-    material_amount: '',
     labor_amount: ''
   });
 
@@ -33,18 +33,49 @@ export function ObjectsPage() {
 
   const handleCreateObject = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!file) {
+      alert("Необходимо загрузить файл сметы!");
+      return;
+    }
+
     try {
-      await apiClient.post('/objects/', {
+      // Use uploadFile helper which sends FormData
+      await apiClient.uploadFile('/objects/', file, {
         ...newObject,
-        material_amount: newObject.material_amount ? parseFloat(newObject.material_amount) : undefined,
-        labor_amount: newObject.labor_amount ? parseFloat(newObject.labor_amount) : undefined
+        labor_amount: newObject.labor_amount && !isNaN(parseFloat(newObject.labor_amount)) ? parseFloat(newObject.labor_amount) : undefined
       });
+
       setShowCreateModal(false);
-      setNewObject({ name: '', customer_name: '', contract_number: '', material_amount: '', labor_amount: '' });
+      setNewObject({ name: '', customer_name: '', contract_number: '', labor_amount: '' });
+      setFile(null);
       await loadObjects();
-      alert('Объект успешно создан!');
+      alert('Объект успешно создан и смета загружена!');
     } catch (err: any) {
-      alert(err.response?.data?.detail || 'Ошибка создания объекта');
+      console.error("Full error object:", err);
+      if (err.response && err.response.data) {
+        console.error("Error Response Data:", JSON.stringify(err.response.data, null, 2));
+      }
+      let errorMessage = 'Ошибка создания объекта';
+
+      if (err.response?.data?.detail) {
+        const detail = err.response.data.detail;
+        if (Array.isArray(detail)) {
+          // Handle Pydantic validation errors (array of objects)
+          errorMessage = detail.map((e: any) => {
+            const field = e.loc ? e.loc.join('.') : 'Unknown field';
+            return `${field}: ${e.msg}`;
+          }).join('\n');
+        } else if (typeof detail === 'object') {
+          errorMessage = JSON.stringify(detail);
+        } else {
+          errorMessage = String(detail);
+        }
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+
+      alert(`Ошибка при создании объекта:\n${errorMessage}`);
     }
   };
 
@@ -270,19 +301,29 @@ export function ObjectsPage() {
                 <label style={{ display: 'block', marginBottom: '5px' }}>Договор №</label>
                 <input type="text" value={newObject.contract_number} onChange={(e) => setNewObject({ ...newObject, contract_number: e.target.value })} style={{ width: '100%', padding: '8px' }} />
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                <div>
-                  <label style={{ display: 'block', marginBottom: '5px' }}>План Материалы</label>
-                  <input type="number" step="0.01" value={newObject.material_amount} onChange={(e) => setNewObject({ ...newObject, material_amount: e.target.value })} style={{ width: '100%', padding: '8px' }} />
+
+              <div style={{ marginBottom: '15px', padding: '10px', backgroundColor: '#e8f8f5', borderRadius: '6px' }}>
+                <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Смета (Excel) *</label>
+                <div style={{ fontSize: '12px', color: '#16a085', marginBottom: '8px' }}>
+                  Бюджет на материалы будет рассчитан автоматически из файла.
                 </div>
-                <div>
-                  <label style={{ display: 'block', marginBottom: '5px' }}>План Работы</label>
-                  <input type="number" step="0.01" value={newObject.labor_amount} onChange={(e) => setNewObject({ ...newObject, labor_amount: e.target.value })} style={{ width: '100%', padding: '8px' }} />
-                </div>
+                <input
+                  required
+                  type="file"
+                  accept=".xlsx, .xls"
+                  onChange={(e) => setFile(e.target.files ? e.target.files[0] : null)}
+                  style={{ width: '100%' }}
+                />
               </div>
+
+              <div style={{ marginBottom: '15px' }}>
+                <label style={{ display: 'block', marginBottom: '5px' }}>План Работы (ФОТ)</label>
+                <input type="number" step="0.01" value={newObject.labor_amount} onChange={(e) => setNewObject({ ...newObject, labor_amount: e.target.value })} style={{ width: '100%', padding: '8px' }} />
+              </div>
+
               <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '20px' }}>
                 <button type="button" onClick={() => setShowCreateModal(false)}>Отмена</button>
-                <button type="submit" style={{ backgroundColor: '#3498db', color: 'white', border: 'none', padding: '10px 20px' }}>Создать</button>
+                <button type="submit" disabled={!file} style={{ backgroundColor: '#3498db', color: 'white', border: 'none', padding: '10px 20px', opacity: !file ? 0.7 : 1 }}>Создать</button>
               </div>
             </form>
           </div>

@@ -20,20 +20,7 @@ class UserRole(str, PyEnum):
     ADMIN = "ADMIN"  # Администратор
 
 
-class TimeSheetStatus(str, PyEnum):
-    """Статусы табелей РТБ"""
-    DRAFT = "ЧЕРНОВИК"
-    SUBMITTED = "НА РАССМОТРЕНИИ"
-    CORRECTED = "ОТКОРРЕКТИРОВАННЫЙ"
-    APPROVED = "УТВЕРЖДЁННЫЙ"
-    CANCELLED = "ОТМЕНЁН"
 
-
-class CommentType(str, PyEnum):
-    """Типы комментариев к табелям"""
-    HR_CORRECTION = "HR_CORRECTION"  # Комментарий при корректировке HR
-    CANCELLATION = "CANCELLATION"    # Причина отмены
-    GENERAL = "GENERAL"              # Общий комментарий
 
 
 class EquipmentOrderStatus(str, PyEnum):

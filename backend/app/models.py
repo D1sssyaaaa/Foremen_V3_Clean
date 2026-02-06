@@ -2,16 +2,16 @@
 Модели базы данных
 Все таблицы системы
 """
+from datetime import datetime, date
 from sqlalchemy import (
     Column, Integer, String, Float, Date, DateTime, Boolean, Text,
     ForeignKey, Table, ARRAY, JSON, func
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, Mapped, mapped_column
 from app.core.database import Base
 from app.core.models_base import (
-    TimestampMixin, UserRole, TimeSheetStatus, EquipmentOrderStatus,
     MaterialRequestStatus, UPDStatus, RegistrationRequestStatus, ObjectStatus,
-    CommentType
+    TimestampMixin, EquipmentOrderStatus, MaterialType
 )
 
 
@@ -73,7 +73,6 @@ class CostObject(Base, TimestampMixin):
     
     # Связи
     foremen = relationship("User", secondary=object_foremen, back_populates="assigned_objects")
-    time_sheet_items = relationship("TimeSheetItem", back_populates="cost_object")
     equipment_orders = relationship("EquipmentOrder", back_populates="cost_object")
     material_requests = relationship("MaterialRequest", back_populates="cost_object")
     material_costs = relationship("MaterialCost", back_populates="cost_object")
@@ -92,7 +91,6 @@ class Brigade(Base, TimestampMixin):
     # Связи
     foreman = relationship("User", back_populates="brigades")
     members = relationship("BrigadeMember", back_populates="brigade", cascade="all, delete-orphan")
-    time_sheets = relationship("TimeSheet", back_populates="brigade")
 
 
 class BrigadeMember(Base, TimestampMixin):
@@ -107,7 +105,6 @@ class BrigadeMember(Base, TimestampMixin):
     
     # Связи
     brigade = relationship("Brigade", back_populates="members")
-    time_sheet_items = relationship("TimeSheetItem", back_populates="member")
 
 
 class SavedWorker(Base, TimestampMixin):
@@ -123,58 +120,7 @@ class SavedWorker(Base, TimestampMixin):
     foreman = relationship("User", backref="saved_workers")
 
 
-class TimeSheet(Base, TimestampMixin):
-    """Табели учета рабочего времени (РТБ)"""
-    __tablename__ = "time_sheets"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    brigade_id = Column(Integer, ForeignKey("brigades.id", ondelete="CASCADE"), nullable=False)
-    period_start = Column(Date, nullable=False, index=True)
-    period_end = Column(Date, nullable=False)
-    status = Column(String(50), nullable=False, default=TimeSheetStatus.DRAFT.value, index=True)
-    number = Column(String(50), unique=True, nullable=True)  # РТБ-2024-001
-    hour_rate = Column(Float, nullable=True)  # Ставка за час
-    total_hours = Column(Float, nullable=True)
-    total_amount = Column(Float, nullable=True)  # Расчетная сумма ФОТ
-    notes = Column(Text, nullable=True)
-    cancellation_reason = Column(Text, nullable=True)  # Причина отмены
-    
-    # Связи
-    brigade = relationship("Brigade", back_populates="time_sheets")
-    items = relationship("TimeSheetItem", back_populates="time_sheet", cascade="all, delete-orphan")
-    comments = relationship("TimeSheetComment", back_populates="time_sheet", cascade="all, delete-orphan")
 
-
-class TimeSheetItem(Base):
-    """Строки табеля (часы по сотрудникам/датам/объектам)"""
-    __tablename__ = "time_sheet_items"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    time_sheet_id = Column(Integer, ForeignKey("time_sheets.id", ondelete="CASCADE"), nullable=False)
-    member_id = Column(Integer, ForeignKey("brigade_members.id", ondelete="CASCADE"), nullable=False)
-    date = Column(Date, nullable=False, index=True)
-    cost_object_id = Column(Integer, ForeignKey("cost_objects.id", ondelete="CASCADE"), nullable=False)
-    hours = Column(Float, nullable=False)
-    
-    # Связи
-    time_sheet = relationship("TimeSheet", back_populates="items")
-    member = relationship("BrigadeMember", back_populates="time_sheet_items")
-    cost_object = relationship("CostObject", back_populates="time_sheet_items")
-
-
-class TimeSheetComment(Base, TimestampMixin):
-    """Комментарии к табелям (от HR-менеджера при корректировке)"""
-    __tablename__ = "time_sheet_comments"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    time_sheet_id = Column(Integer, ForeignKey("time_sheets.id", ondelete="CASCADE"), nullable=False, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    comment_type = Column(String(50), nullable=False, default=CommentType.GENERAL.value)
-    text = Column(Text, nullable=False)
-    
-    # Связи
-    time_sheet = relationship("TimeSheet", back_populates="comments")
-    user = relationship("User")
 
 
 class EquipmentOrder(Base, TimestampMixin):
@@ -550,16 +496,67 @@ class DeliveryCost(Base, TimestampMixin):
     created_by = relationship("User", foreign_keys=[created_by_id])
 
 
+class EstimateItem(Base, TimestampMixin):
+    """Позиции сметы (загружаются из Excel)"""
+    __tablename__ = "estimate_items"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    cost_object_id = Column(Integer, ForeignKey("cost_objects.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    category = Column(String(255), nullable=True)  # Раздел сметы (напр. "Кабельные линии")
+    name = Column(String(500), nullable=False)     # Наименование материала
+    unit = Column(String(50), nullable=False)      # Ед. измерения
+    quantity = Column(Float, nullable=False)       # Количество по смете
+    price = Column(Float, nullable=False)          # Цена за единицу
+    total_amount = Column(Float, nullable=False)   # Общая сумма позиции
+    
+    # Для отслеживания прогресса (Soft Limits)
+    ordered_quantity = Column(Float, default=0.0)  # Сколько уже заказано (через MaterialRequest)
+    
+    # Связи
+    cost_object = relationship("CostObject", backref="estimate_items")
+
+
 # Импорт дополнительных моделей из отдельных модулей
 from app.notifications.models import TelegramNotification
 
 # Обновление __all__ для полного экспорта
 __all__ = [
-    "User", "CostObject", "Brigade", "BrigadeMember", "TimeSheet", "TimeSheetItem",
-    "TimeSheetComment", "EquipmentOrder", "EquipmentCost", "MaterialRequest",
+    "User", "CostObject", "Brigade", "BrigadeMember", "EquipmentOrder", "EquipmentCost", "MaterialRequest",
     "MaterialRequestItem", "MaterialCost", "MaterialCostItem", "CostEntry",
     "RegistrationRequest", "ObjectAccessRequest", "AuditLog", "TelegramNotification",
-    "TelegramLinkCode", "Delivery", "LaborCost", "OtherCost", "DeliveryCost",
+    "EstimateItem",
+    "TelegramLinkCode", "Delivery",
+    "TimeEntry",
+    "RecentWorker",
+    "LaborCost", "OtherCost", "DeliveryCost",
     "object_foremen", "UPDDistribution", "SavedWorker"
 ]
+
+
+class TimeEntry(Base):
+    __tablename__ = "rtb_time_entries"
+
+    id = Column(Integer, primary_key=True)
+    date = Column(Date, index=True, nullable=False)
+    object_id = Column(Integer, ForeignKey("cost_objects.id"), nullable=False)
+    worker_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    foreman_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    hours = Column(Float, default=0.0)
+    status = Column(String, default="APPROVED")
+    created_at = Column(DateTime, default=func.now())
+
+    cost_object = relationship("CostObject")
+    worker = relationship("User", foreign_keys=[worker_id])
+    foreman = relationship("User", foreign_keys=[foreman_id])
+
+
+class RecentWorker(Base):
+    __tablename__ = "rtb_recent_workers"
+
+    foreman_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
+    worker_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
+    last_used_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    worker = relationship("User", foreign_keys=[worker_id])
 

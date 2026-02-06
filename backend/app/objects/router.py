@@ -1,18 +1,44 @@
 """
 Роутер для объектов учета
 """
-from fastapi import APIRouter, Depends, HTTPException, status, Body
+from fastapi import APIRouter, Depends, HTTPException, status, Body, Form, File, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, insert, desc
+from sqlalchemy import select, insert, desc, func
 from typing import List, Optional
 from pydantic import BaseModel
+from sqlalchemy.orm import selectinload
 from app.core.database import get_db
-from app.models import User, CostObject, ObjectAccessRequest
+from sqlalchemy import func, desc, select, cast, Float
+from app.models import User, CostObject, ObjectAccessRequest, MaterialCost
 from app.auth.dependencies import get_current_user, require_roles
 from app.core.models_base import UserRole, ObjectStatus, ObjectAccessRequestStatus
 from app.services.object_service import ObjectService
-from sqlalchemy import func
-from app.models import MaterialCost, TimeSheet, TimeSheetItem
+from app.services.estimate_service import EstimateService
+from app.services.estimate_service import EstimateService
+from fastapi import UploadFile, File
+
+router = APIRouter()
+
+@router.post("/{object_id}/estimate")
+async def upload_estimate(
+    object_id: int,
+    file: UploadFile = File(...),
+    current_user: User = Depends(require_roles([UserRole.MANAGER, UserRole.ADMIN])),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Загрузка сметы из Excel (с заменой старой)
+    """
+    if not file.filename.endswith(('.xlsx', '.xls')):
+         raise HTTPException(status_code=400, detail="Файл должен быть Excel (.xlsx, .xls)")
+         
+    result = await EstimateService.parse_and_save_excel(
+        session=db,
+        object_id=object_id,
+        file=file
+    )
+    
+    return result
 
 router = APIRouter()
 
@@ -91,13 +117,8 @@ async def get_objects(
         )
         fact_materials = mat_res.scalar() or 0
         
-        # Fact - Labor (TimeSheetItem * TimeSheet.hour_rate)
-        labor_res = await db.execute(
-            select(func.sum(TimeSheetItem.hours * TimeSheet.hour_rate))
-            .join(TimeSheet, TimeSheetItem.time_sheet_id == TimeSheet.id)
-            .where(TimeSheetItem.cost_object_id == obj.id)
-        )
-        fact_labor = labor_res.scalar() or 0
+        # Fact - Labor (Legacy TimeSheet removed)
+        fact_labor = 0
         
         # Balance
         diff_materials = plan_materials - fact_materials
@@ -148,6 +169,47 @@ async def get_objects(
     return objects_with_stats
 
 
+@router.get("/my")
+async def get_my_objects(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Получение объектов, назначенных текущему бригадиру
+    
+    - Используется в Telegram Mini App
+    - Возвращает только активные объекты
+    """
+    # Проверка роли
+    if UserRole.FOREMAN not in current_user.roles:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only foremen can access this endpoint"
+        )
+    
+    # Загружаем пользователя с объектами
+    result = await db.execute(
+        select(User)
+        .options(selectinload(User.assigned_objects))
+        .where(User.id == current_user.id)
+    )
+    user = result.scalar_one()
+    
+    # Фильтруем только активные объекты
+    active_objects = [obj for obj in user.assigned_objects if obj.is_active]
+    
+    return [
+        {
+            "id": obj.id,
+            "name": obj.name,
+            "code": obj.code,
+            "status": obj.status,
+            "customer_name": obj.customer_name
+        }
+        for obj in active_objects
+    ]
+
+
 @router.get("/{object_id}")
 async def get_object(
     object_id: int,
@@ -182,20 +244,29 @@ async def get_object(
 
 @router.post("/")
 async def create_object(
-    request: CreateObjectRequest = Body(...),
+    name: str = Form(...),
+    customer_name: Optional[str] = Form(None),
+    contract_number: Optional[str] = Form(None),
+    labor_amount: Optional[float] = Form(None),
+    contract_amount: Optional[float] = Form(None),
+    code: Optional[str] = Form(None),
+    file: UploadFile = File(...),
     current_user: User = Depends(require_roles([UserRole.MANAGER, UserRole.ADMIN])),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Создание нового объекта учета
+    Создание нового объекта учета с обязательной загрузкой сметы
     Доступно: MANAGER, ADMIN
     """
     from datetime import datetime
     
-    # Генерация кода если не указан
-    if request.code:
-        code = request.code
-        # Проверка уникальности кода
+    # 1. Валидация файла
+    if not file.filename.endswith(('.xlsx', '.xls')):
+         raise HTTPException(status_code=400, detail="Смета должна быть Excel файлом (.xlsx, .xls)")
+
+    # 2. Генерация кода (если нет)
+    if code:
+        # Проверка unikальности кода
         result = await db.execute(select(CostObject).where(CostObject.code == code))
         if result.scalar_one_or_none():
             raise HTTPException(
@@ -203,11 +274,9 @@ async def create_object(
                 detail="Объект с таким кодом уже существует"
             )
     else:
-        # Автогенерация кода в формате OBJ-{год}-{номер}
         current_year = datetime.now().year
         prefix = f"OBJ-{current_year}-"
         
-        # Найти максимальный номер за текущий год
         result = await db.execute(
             select(CostObject)
             .where(CostObject.code.like(f"{prefix}%"))
@@ -226,39 +295,58 @@ async def create_object(
         
         code = f"{prefix}{next_num:03d}"
     
-    # Автоматический расчет contract_amount если не указан
-    contract_amount = request.contract_amount
-    if contract_amount is None and request.material_amount is not None and request.labor_amount is not None:
-        contract_amount = request.material_amount + request.labor_amount
-    
+    # 3. Создаем объект
     obj = CostObject(
-        name=request.name,
+        name=name,
         code=code,
-        contract_number=request.contract_number,
-        customer_name=request.customer_name,
+        contract_number=contract_number,
+        customer_name=customer_name,
         contract_amount=contract_amount,
-        material_amount=request.material_amount,
-        labor_amount=request.labor_amount,
+        material_amount=0, 
+        labor_amount=labor_amount,
         is_active=True,
         status='ACTIVE'
     )
     
     db.add(obj)
-    await db.commit()
-    await db.refresh(obj)
+    await db.flush() 
     
-    return {
-        "id": obj.id,
-        "name": obj.name,
-        "customer_name": obj.customer_name,
-        "code": obj.code,
-        "contract_number": obj.contract_number,
-        "contract_amount": obj.contract_amount,
-        "material_amount": obj.material_amount,
-        "labor_amount": obj.labor_amount,
-        "status": obj.status,
-        "is_active": obj.is_active
-    }
+    try:
+        # 4. Парсим смету
+        # file это UploadFile
+        parse_result = await EstimateService.parse_and_save_excel(
+            session=db,
+            object_id=obj.id,
+            file=file,
+            commit=False 
+        )
+        
+        if parse_result.get("status") != "success":
+             raise HTTPException(status_code=400, detail="Ошибка в файле сметы: пустой или некорректный файл")
+
+        # 5. Обновляем сумму
+        if contract_amount is None:
+            mat_sum = obj.material_amount or 0
+            lab_sum = labor_amount or 0
+            obj.contract_amount = mat_sum + lab_sum
+            
+        await db.commit()
+        await db.refresh(obj)
+        
+        return {
+            "id": obj.id,
+            "name": obj.name,
+            "code": obj.code,
+            "material_amount": obj.material_amount,
+            "contract_amount": obj.contract_amount,
+            "estimate_items_count": parse_result.get("items_count")
+        }
+        
+    except Exception as e:
+        await db.rollback()
+        # Если parse_and_save_excel кинул HTTPException, он пролетит дальше
+        # Если другое исключение - логируем (FastAPI сам залогирует) и кидаем 500
+        raise e
 
 
 @router.put("/{object_id}")
@@ -362,7 +450,7 @@ async def get_object_stats(
         )
     
     from sqlalchemy import func
-    from app.models import MaterialRequest, EquipmentOrder, MaterialCost, TimeSheet, TimeSheetItem
+    from app.models import MaterialRequest, EquipmentOrder, MaterialCost
     
     obj = await db.get(CostObject, object_id)
     if not obj:
@@ -412,22 +500,8 @@ async def get_object_stats(
     upd_docs = upd_result.first()
     
     # Статистика по табелям РТБ
-    timesheets_result = await db.execute(
-        select(func.count(func.distinct(TimeSheetItem.time_sheet_id)))
-        .join(TimeSheet, TimeSheet.id == TimeSheetItem.time_sheet_id)
-        .where(TimeSheetItem.cost_object_id == object_id)
-    )
-    timesheets_count = timesheets_result.scalar() or 0
-    
-    # Общая сумма затрат на РТБ (часы * ставка из табеля)
-    labor_costs_result = await db.execute(
-        select(
-            func.coalesce(func.sum(TimeSheetItem.hours * TimeSheet.hour_rate), 0)
-        )
-        .join(TimeSheet, TimeSheet.id == TimeSheetItem.time_sheet_id)
-        .where(TimeSheetItem.cost_object_id == object_id)
-    )
-    labor_costs_total = labor_costs_result.scalar() or 0
+    timesheets_count = 0
+    labor_costs_total = 0
     
     # Общие затраты (материалы учитываем через УПД)
     total_costs = (
@@ -465,6 +539,56 @@ async def get_object_stats(
             "total_budget": float(obj.contract_amount or 0)
         }
     }
+
+
+@router.get("/{object_id}/timesheets")
+async def get_object_timesheets(
+    object_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Получение списка табелей, в которых есть работы по этому объекту.
+    Восстановленный эндпоинт.
+    """
+    from app.models import TimeSheet, TimeSheetItem
+    
+    # Check permissions (exclude FOREMAN just in case, or allow if they need it)
+    user_roles = current_user.roles or []
+    # Similar check as others
+    if UserRole.FOREMAN.value in user_roles and len(user_roles) == 1:
+         # If foremen need this, remove this check. Assuming Managers use ObjectDetail.
+         pass 
+
+    obj = await db.get(CostObject, object_id)
+    if not obj:
+        raise HTTPException(status_code=404, detail="Объект не найден")
+
+    # Select TimeSheets that have at least one item for this object
+    # Use distinct to avoid duplicates
+    query = (
+        select(TimeSheet)
+        .join(TimeSheetItem, TimeSheetItem.time_sheet_id == TimeSheet.id)
+        .where(TimeSheetItem.cost_object_id == object_id)
+        .distinct()
+        .order_by(desc(TimeSheet.period_start))
+    )
+    
+    result = await db.execute(query)
+    timesheets = result.scalars().all()
+    
+    return [
+        {
+            "id": ts.id,
+            "period_start": ts.period_start,
+            "period_end": ts.period_end,
+            "status": ts.status,
+            "foreman_id": ts.user_id,
+            "created_at": ts.created_at,
+            # Add other fields if needed by TimeSheetSummary
+        }
+        for ts in timesheets
+    ]
 
 
 @router.get("/{object_id}/details")
@@ -635,6 +759,53 @@ async def change_object_status(
         "equipment_limit": budget.equipment_limit if budget else None,
         "updated_at": budget.updated_at if budget else None
     }
+
+
+@router.get("/{object_id}/estimate")
+async def get_object_estimate(
+    object_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Получение сметы объекта (список позиций)
+    
+    - Для бригадиров: БЕЗ цен (price, total_amount)
+    - Для менеджеров: со всеми данными
+    """
+    items = await EstimateService.get_estimate_items(db, object_id)
+    
+    # Для бригадиров НЕ возвращаем цены
+    if UserRole.FOREMAN in current_user.roles and UserRole.MANAGER not in current_user.roles:
+        return [
+            {
+                "id": item.id,
+                "category": item.category,
+                "name": item.name,
+                "unit": item.unit,
+                "quantity": item.quantity,
+                "delivered_quantity": 0.0,  # Заглушка для будущей интеграции УПД
+                "remaining_quantity": item.quantity - 0.0  # Остаток = Кол-во по смете - Отгружено
+            }
+            for item in items
+        ]
+    
+    # Для менеджеров возвращаем всё
+    return [
+        {
+            "id": item.id,
+            "category": item.category,
+            "name": item.name,
+            "unit": item.unit,
+            "quantity": item.quantity,
+            "price": item.price,
+            "total_amount": item.total_amount,
+            "ordered_quantity": item.ordered_quantity,
+            "delivered_quantity": 0.0,  # Заглушка для будущей интеграции УПД
+            "remaining_quantity": item.quantity - 0.0  # Остаток = Кол-во по смете - Отгружено
+        }
+        for item in items
+    ]
 
 
 @router.get("/{object_id}/material-items")

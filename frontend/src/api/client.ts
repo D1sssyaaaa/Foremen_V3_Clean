@@ -30,7 +30,7 @@ class ApiClient {
       (response) => response,
       async (error: AxiosError) => {
         const originalRequest = error.config;
-        
+
         if (error.response?.status === 401 && originalRequest && !originalRequest.headers['X-Retry']) {
           // Попытка обновить токен
           try {
@@ -39,10 +39,11 @@ class ApiClient {
             return this.client(originalRequest);
           } catch {
             this.logout();
-            window.location.href = '/login';
+            console.warn('Redirect to login disabled for testing');
+            // window.location.href = '/login';
           }
         }
-        
+
         return Promise.reject(error);
       }
     );
@@ -70,11 +71,11 @@ class ApiClient {
     if (!this.refreshToken) {
       throw new Error('No refresh token');
     }
-    
+
     const { data } = await this.client.post<TokenResponse>('/auth/refresh', {
       refresh_token: this.refreshToken,
     });
-    
+
     this.saveTokens(data.access_token, data.refresh_token);
   }
 
@@ -123,10 +124,14 @@ class ApiClient {
   async uploadFile<T>(url: string, file: File, additionalData?: any): Promise<T> {
     const formData = new FormData();
     formData.append('file', file);
-    
+
     if (additionalData) {
       Object.keys(additionalData).forEach(key => {
-        formData.append(key, additionalData[key]);
+        const value = additionalData[key];
+        if (value !== undefined && value !== null) {
+          // Handle non-string values specifically if needed, but append generally converts to string
+          formData.append(key, value instanceof Blob ? value : String(value));
+        }
       });
     }
 
@@ -135,7 +140,7 @@ class ApiClient {
         'Content-Type': 'multipart/form-data',
       },
     });
-    
+
     return data;
   }
 }

@@ -43,7 +43,7 @@ class TimeSheetResponse(BaseModel):
     period_end: date
     status: str
     hour_rate: Decimal | None = None
-    total_hours: Decimal
+    total_hours: Decimal | None = None
     total_amount: Decimal | None = None
     items: list[dict[str, Any]] = Field(default_factory=list, description="Список записей табеля")
     created_at: datetime
@@ -54,10 +54,13 @@ class TimeSheetListItem(BaseModel):
     """Элемент списка табелей (без Config для избежания рекурсии Pydantic v2)"""
     id: int
     brigade_name: str
+    foreman_name: str | None = None
+    objects_info: str | None = None
     period_start: date
     period_end: date
     status: str
-    total_hours: Decimal
+    total_hours: Decimal | None = None
+    total_amount: Decimal | None = None
     created_at: datetime
 
 
@@ -66,9 +69,14 @@ class TimeSheetSubmitRequest(BaseModel):
     comment: str | None = Field(None, description="Комментарий бригадира")
 
 
+class TimeSheetItemRate(BaseModel):
+    """Ставка для конкретной записи табеля"""
+    id: int
+    hour_rate: Decimal = Field(gt=0, description="Ставка за час")
+
 class TimeSheetApproveRequest(BaseModel):
     """Запрос на утверждение табеля"""
-    hour_rate: Decimal = Field(description="Ставка за час работы", gt=0)
+    items: list[TimeSheetItemRate] = Field(description="Список ставок для работников")
     comment: str | None = Field(None, description="Комментарий менеджера")
 
 

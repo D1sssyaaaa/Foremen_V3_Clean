@@ -25,6 +25,19 @@ from app.time_sheets.schemas import (
 router = APIRouter()
 
 
+def get_status_key(status_val: Optional[str]) -> str:
+    """Безопасное получение ключа статуса (DRAFT, SUBMITTED...)"""
+    if not status_val:
+        return "DRAFT"
+    try:
+        # Попытка найти по значению ("ЧЕРНОВИК" -> "DRAFT")
+        return TimeSheetStatus(status_val).name
+    except ValueError:
+        # Попытка проверить, не является ли это уже ключом ("DRAFT")
+        if status_val in TimeSheetStatus.__members__:
+            return status_val
+        return "DRAFT"
+
 @router.post("/", response_model=TimeSheetResponse, status_code=status.HTTP_201_CREATED)
 async def create_timesheet(
     data: TimeSheetCreate,
@@ -32,24 +45,32 @@ async def create_timesheet(
     current_user: User = Depends(require_roles([UserRole.FOREMAN.value]))
 ):
     """
-    Создание табеля рабочего времени
-    
-    - Доступно: FOREMAN (только для своей бригады)
-    - Статус: DRAFT
-    - Валидирует членов бригады и объекты учета
+    Создание чернового табеля
     """
     service = TimeSheetService(db)
     
+    # Проверка, что пользователь - бригадир и у него есть бригада
+    from sqlalchemy import select
+    brigade_query = select(Brigade).where(Brigade.foreman_id == current_user.id)
+    brigade_result = await db.execute(brigade_query)
+    brigade = brigade_result.scalar_one_or_none()
+    
+    if not brigade:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Пользователь не является бригадиром или не назначена бригада"
+        )
+    
     try:
-        timesheet = await service.create_timesheet(data, current_user.id)
+        timesheet = await service.create_timesheet(
+            brigade_id=brigade.id,
+            period_start=data.period_start
+        )
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
-    
-    # Получение детальной информации
-    timesheet = await service.get_timesheet_by_id(timesheet.id)
     
     return TimeSheetResponse(
         id=timesheet.id,
@@ -57,22 +78,11 @@ async def create_timesheet(
         brigade_name=timesheet.brigade.name,
         period_start=timesheet.period_start,
         period_end=timesheet.period_end,
-        status=timesheet.status.value,
+        status=get_status_key(timesheet.status),
         hour_rate=timesheet.hour_rate,
         total_hours=timesheet.total_hours,
         total_amount=timesheet.total_amount,
-        items=[
-            TimeSheetItemResponse(
-                id=item.id,
-                member_id=item.member_id,
-                member_name=item.member.full_name,
-                date=item.date,
-                cost_object_id=item.cost_object_id,
-                cost_object_name=item.cost_object.name,
-                hours=item.hours
-            )
-            for item in timesheet.items
-        ],
+        items=[],
         created_at=timesheet.created_at,
         updated_at=timesheet.updated_at
     )
@@ -105,10 +115,14 @@ async def get_timesheets(
         try:
             status_enum = TimeSheetStatus(status)
         except ValueError:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Некорректный статус: {status}"
-            )
+            # Maybe it is a name?
+            if status in TimeSheetStatus.__members__:
+                 status_enum = TimeSheetStatus[status]
+            else:
+                 raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Некорректный статус: {status}"
+                )
     
     # Определение прав доступа
     if UserRole.FOREMAN.value in current_user.roles:
@@ -130,22 +144,40 @@ async def get_timesheets(
             status_enum, period_start, period_end
         )
     
-    return [
-        TimeSheetListItem(
-            id=ts.id,
-            brigade_name=ts.brigade.name,
-            period_start=ts.period_start,
-            period_end=ts.period_end,
-            status=ts.status.value,
-            total_hours=ts.total_hours,
-            created_at=ts.created_at
+    
+    result = []
+    for ts in timesheets:
+        # Foreman Name
+        foreman_name = "Не назначен"
+        if ts.brigade and ts.brigade.foreman:
+            foreman_name = ts.brigade.foreman.full_name or ts.brigade.foreman.username
+        
+        # Objects Info
+        objects = set()
+        for item in ts.items:
+            if item.cost_object:
+                objects.add(item.cost_object.name)
+        objects_str = ", ".join(sorted(list(objects)))
+        
+        result.append(
+            TimeSheetListItem(
+                id=ts.id,
+                brigade_name=ts.brigade.name,
+                foreman_name=foreman_name,
+                objects_info=objects_str,
+                period_start=ts.period_start,
+                period_end=ts.period_end,
+                status=get_status_key(ts.status),
+                total_hours=ts.total_hours,
+                created_at=ts.created_at
+            )
         )
-        for ts in timesheets
-    ]
+            
+    return result
 
 
 @router.get("/{timesheet_id}", response_model=TimeSheetResponse)
-async def get_timesheet_detail(
+async def get_timesheet(
     timesheet_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -179,7 +211,7 @@ async def get_timesheet_detail(
         brigade_name=timesheet.brigade.name,
         period_start=timesheet.period_start,
         period_end=timesheet.period_end,
-        status=timesheet.status.value,
+        status=get_status_key(timesheet.status),
         hour_rate=timesheet.hour_rate,
         total_hours=timesheet.total_hours,
         total_amount=timesheet.total_amount,
@@ -231,7 +263,7 @@ async def submit_timesheet(
         brigade_name=timesheet.brigade.name,
         period_start=timesheet.period_start,
         period_end=timesheet.period_end,
-        status=timesheet.status.value,
+        status=get_status_key(timesheet.status),
         hour_rate=timesheet.hour_rate,
         total_hours=timesheet.total_hours,
         total_amount=timesheet.total_amount,
@@ -268,7 +300,7 @@ async def approve_timesheet(
     service = TimeSheetService(db)
     
     try:
-        timesheet = await service.approve_timesheet(timesheet_id, request.hour_rate)
+        timesheet = await service.approve_timesheet(timesheet_id, request.items)
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -284,7 +316,7 @@ async def approve_timesheet(
         brigade_name=timesheet.brigade.name,
         period_start=timesheet.period_start,
         period_end=timesheet.period_end,
-        status=timesheet.status.value,
+        status=get_status_key(timesheet.status),
         hour_rate=timesheet.hour_rate,
         total_hours=timesheet.total_hours,
         total_amount=timesheet.total_amount,
@@ -336,7 +368,7 @@ async def reject_timesheet(
         brigade_name=timesheet.brigade.name,
         period_start=timesheet.period_start,
         period_end=timesheet.period_end,
-        status=timesheet.status.value,
+        status=get_status_key(timesheet.status),
         hour_rate=timesheet.hour_rate,
         total_hours=timesheet.total_hours,
         total_amount=timesheet.total_amount,

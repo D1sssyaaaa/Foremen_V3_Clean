@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import io
 
 from app.models import (
-    CostEntry, CostObject, TimeSheet, EquipmentOrder,
+    CostEntry, CostObject, EquipmentOrder,
     MaterialRequest, MaterialCost
 )
 
@@ -298,17 +298,8 @@ class AnalyticsService:
         # Затраты
         costs = await self.get_object_costs(object_id, period_start, period_end)
         
-        # Часы труда
-        labor_hours_query = select(func.sum(TimeSheet.total_hours)).where(
-            TimeSheet.cost_object_id == object_id
-        )
-        if period_start:
-            labor_hours_query = labor_hours_query.where(TimeSheet.period_end >= period_start)
-        if period_end:
-            labor_hours_query = labor_hours_query.where(TimeSheet.period_start <= period_end)
-        
-        labor_hours_result = await self.db.execute(labor_hours_query)
-        labor_hours = labor_hours_result.scalar_one_or_none() or Decimal('0')
+        # Часы труда (Legacy TimeSheet removed)
+        labor_hours = Decimal('0')
         
         # Часы техники
         equipment_hours_query = select(func.sum(EquipmentOrder.total_hours)).where(
@@ -318,10 +309,7 @@ class AnalyticsService:
         equipment_hours = equipment_hours_result.scalar_one_or_none() or Decimal('0')
         
         # Количество документов
-        timesheets_count_query = select(func.count(TimeSheet.id)).where(
-            TimeSheet.cost_object_id == object_id
-        )
-        timesheets_count = (await self.db.execute(timesheets_count_query)).scalar_one()
+        timesheets_count = 0
         
         equipment_count_query = select(func.count(EquipmentOrder.id)).where(
             EquipmentOrder.cost_object_id == object_id

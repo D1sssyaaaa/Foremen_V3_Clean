@@ -12,12 +12,13 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
-        case_sensitive=False
+        case_sensitive=False,
+        extra="ignore"
     )
     
     # Database
-    # По умолчанию используем PostgreSQL (значения можно переопределить через .env)
-    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/construction_costs"
+    # По умолчанию используем SQLite для локальной разработки (значения можно переопределить через .env)
+    database_url: str = "sqlite+aiosqlite:///./construction_costs.db"
     database_echo: bool = False
     
     # Redis
@@ -41,6 +42,8 @@ class Settings(BaseSettings):
     telegram_webhook_url: str = ""
     telegram_admin_ids: str = ""
     api_base_url: str = "http://localhost:8000/api/v1"
+    miniapp_url: str = "http://localhost:5173" # Default dev URL
+
     
     # CORS
     allowed_origins: str = "http://localhost:3000,http://localhost:3001,http://localhost:5173"

@@ -1,7 +1,7 @@
 """Бизнес-логика модуля табелей рабочего времени"""
 from datetime import date, datetime
 from decimal import Decimal
-from typing import List, Optional
+from typing import List, Optional, Any
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -143,7 +143,10 @@ class TimeSheetService:
         """Получение всех табелей (для менеджеров)"""
         query = (
             select(TimeSheet)
-            .options(selectinload(TimeSheet.brigade))
+            .options(
+                selectinload(TimeSheet.brigade).selectinload(Brigade.foreman),
+                selectinload(TimeSheet.items).selectinload(TimeSheetItem.cost_object)
+            )
         )
         
         if status:
@@ -218,13 +221,13 @@ class TimeSheetService:
     async def approve_timesheet(
         self,
         timesheet_id: int,
-        hour_rate: Decimal
+        items_data: List[Any] # List[TimeSheetItemRate]
     ) -> TimeSheet:
         """
         Утверждение табеля
         
         Переход: UNDER_REVIEW -> APPROVED
-        Устанавливает ставку и рассчитывает итоговую сумму
+        Устанавливает ставки для КАЖДОЙ записи и рассчитывает итоговые суммы
         """
         timesheet = await self.get_timesheet_by_id(timesheet_id)
         if not timesheet:
@@ -235,10 +238,29 @@ class TimeSheetService:
             raise ValueError(
                 f"Табель в статусе {timesheet.status}, утверждение невозможно"
             )
+            
+        # Создаем мапу ставок для быстрого доступа
+        rates_map = {item.id: item.hour_rate for item in items_data}
         
-        # Установка ставки и расчет суммы
-        timesheet.hour_rate = hour_rate
-        timesheet.total_amount = timesheet.total_hours * hour_rate
+        total_amount = Decimal("0")
+        total_items_updated = 0
+        
+        # Обновляем записи
+        for item in timesheet.items:
+            if item.id in rates_map:
+                rate = rates_map[item.id]
+                item.hour_rate = float(rate)
+                item.amount = float(item.hours) * float(rate)
+                
+                total_amount += Decimal(str(item.amount))
+                total_items_updated += 1
+            else:
+                # Если ставки нет, кидаем ошибку или пропускаем?
+                # Лучше требовать ставку для всех
+                raise ValueError(f"Не указана ставка для записи #{item.id} ({item.member.full_name})")
+        
+        # Обновляем итоги табеля
+        timesheet.total_amount = float(total_amount)
         timesheet.status = TimeSheetStatus.APPROVED
         
         # Создание записей затрат по объектам
@@ -381,23 +403,26 @@ class TimeSheetService:
     
     async def _create_cost_entries(self, timesheet: TimeSheet) -> None:
         """Создание записей затрат по объектам"""
-        # Группировка по объектам
-        object_hours = {}
+        # Группировка СУММ по объектам
+        object_amounts = {}
+        
         for item in timesheet.items:
             object_id = item.cost_object_id
-            if object_id not in object_hours:
-                object_hours[object_id] = Decimal("0")
-            object_hours[object_id] += item.hours
+            if object_id not in object_amounts:
+                object_amounts[object_id] = Decimal("0")
+            
+            # item.amount уже посчитан при утверждении
+            if item.amount:
+                 object_amounts[object_id] += Decimal(str(item.amount))
         
         # Создание записей затрат
-        for object_id, hours in object_hours.items():
-            amount = hours * timesheet.hour_rate
+        for object_id, amount in object_amounts.items():
             cost_entry = CostEntry(
                 type="labor",
                 cost_object_id=object_id,
                 date=timesheet.period_end,  # Используем конец периода
-                amount=amount,
-                description=f"Табель #{timesheet.id}, {hours}ч × {timesheet.hour_rate}₽/ч"
+                amount=float(amount),
+                description=f"Табель #{timesheet.id} (Бригада {timesheet.brigade.name})"
             )
             self.db.add(cost_entry)
     

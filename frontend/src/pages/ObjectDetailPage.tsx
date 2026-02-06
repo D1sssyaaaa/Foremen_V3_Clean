@@ -32,26 +32,7 @@ interface ObjectStats {
   };
 }
 
-interface MaterialItem {
-  id: number;
-  name: string;
-  quantity: number;
-  unit: string;
-  price: number;
-  amount: number;
-}
 
-interface MaterialItemDetail {
-  id: number;
-  product_name: string;
-  quantity: number;
-  unit: string;
-  price: number;
-  amount: number;
-  document_date: string | null;
-  document_number: string;
-  supplier_name: string;
-}
 
 interface CostDetail {
   id: number | string;
@@ -61,7 +42,6 @@ interface CostDetail {
   document_number?: string;
   type?: string;
   hours?: number;
-  items?: MaterialItem[];
 }
 
 interface CostSummary {
@@ -291,33 +271,100 @@ export function ObjectDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedRows, setExpandedRows] = useState<Set<string | number>>(new Set());
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+
+  const toggleGroup = (date: string) => {
+    const newCollapsed = new Set(collapsedGroups);
+    if (newCollapsed.has(date)) {
+      newCollapsed.delete(date);
+    } else {
+      newCollapsed.add(date);
+    }
+    setCollapsedGroups(newCollapsed);
+  };
 
   // Edit Modal State
   const [showEditModal, setShowEditModal] = useState(false);
   const [editFormData, setEditFormData] = useState<Partial<EditableObject>>({});
   const [loadingEdit, setLoadingEdit] = useState(false);
 
-  // Tabs State
-  const [activeTab, setActiveTab] = useState<'summary' | 'materials'>('summary');
-  const [materialItems, setMaterialItems] = useState<MaterialItemDetail[]>([]);
-  const [loadingMaterials, setLoadingMaterials] = useState(false);
+  interface TimeSheetItemSimple {
+    id: number;
+    member_name: string;
+    date: string;
+    hours: number;
+    rate: number | null;
+    amount: number | null;
+  }
 
-  const loadMaterialItems = async () => {
-    if (materialItems.length > 0) return; // Cache for this session
-    setLoadingMaterials(true);
+  interface TimeSheetSummary {
+    id: number;
+    period_start: string;
+    period_end: string;
+    brigade_name: string;
+    status: string;
+    total_hours: number;
+    total_amount: number;
+    items: TimeSheetItemSimple[];
+  }
+
+  // Estimate State
+  interface EstimateItem {
+    id: number;
+    category: string;
+    name: string;
+    unit: string;
+    quantity: number;
+    price: number;
+    total_amount: number;
+    delivered_quantity?: number;  // Отгруженное количество
+    remaining_quantity?: number;  // Остаток
+  }
+
+  const [estimateItems, setEstimateItems] = useState<EstimateItem[]>([]);
+  const [loadingEstimate, setLoadingEstimate] = useState(false);
+
+  // Tabs State
+  const [activeTab, setActiveTab] = useState<'summary' | 'labor' | 'estimate'>('summary');
+  const [timesheetSummaries, setTimesheetSummaries] = useState<TimeSheetSummary[]>([]);
+  const [loadingTimesheets, setLoadingTimesheets] = useState(false);
+
+  // Timesheet Modal
+  const [selectedTimesheet, setSelectedTimesheet] = useState<TimeSheetSummary | null>(null);
+
+  const loadEstimate = async () => {
+    if (estimateItems.length > 0) return;
+    setLoadingEstimate(true);
     try {
-      const data = await apiClient.get<MaterialItemDetail[]>(`/objects/${objectId}/material-items`);
-      setMaterialItems(data);
+      const data = await apiClient.get<EstimateItem[]>(`/objects/${objectId}/estimate`);
+      setEstimateItems(data);
     } catch (err) {
-      console.error('Failed to load material items:', err);
+      console.error('Failed to load estimate:', err);
     } finally {
-      setLoadingMaterials(false);
+      setLoadingEstimate(false);
+    }
+  };
+
+
+
+  const loadTimesheets = async () => {
+    if (timesheetSummaries.length > 0) return;
+    setLoadingTimesheets(true);
+    try {
+      const data = await apiClient.get<TimeSheetSummary[]>(`/objects/${objectId}/timesheets`);
+      setTimesheetSummaries(data);
+    } catch (err) {
+      console.error('Failed to load timesheets:', err);
+    } finally {
+      setLoadingTimesheets(false);
     }
   };
 
   useEffect(() => {
-    if (activeTab === 'materials') {
-      loadMaterialItems();
+    if (activeTab === 'labor') {
+      loadTimesheets();
+    } else if (activeTab === 'estimate') {
+      loadEstimate();
     }
   }, [activeTab]);
 
@@ -334,6 +381,7 @@ export function ObjectDetailPage() {
     if (objectId) {
       loadStats();
       loadCosts();
+      loadTimesheets(); // Load timesheets immediately for the summary view
     }
   }, [objectId]);
 
@@ -364,6 +412,7 @@ export function ObjectDetailPage() {
       console.error('Ошибка загрузки затрат:', err);
     }
   };
+
 
   const handleOpenEdit = async () => {
     setLoadingEdit(true);
@@ -447,6 +496,15 @@ export function ObjectDetailPage() {
 
   if (!stats) return null;
 
+  // Group items by category for Estimate Tab
+  const groupedEstimate = estimateItems.reduce((acc, item) => {
+    if (!acc[item.category]) acc[item.category] = [];
+    acc[item.category].push(item);
+    return acc;
+  }, {} as Record<string, EstimateItem[]>);
+
+  const estimateTotal = estimateItems.reduce((sum, item) => sum + item.total_amount, 0);
+
   return (
     <div style={containerStyle}>
       <div style={cardStyle}>
@@ -510,55 +568,105 @@ export function ObjectDetailPage() {
           <div style={tabStyle(activeTab === 'summary')} onClick={() => setActiveTab('summary')}>
             📊 Сводка
           </div>
-          <div style={tabStyle(activeTab === 'materials')} onClick={() => setActiveTab('materials')}>
-            📦 Материалы
+          <div style={tabStyle(activeTab === 'estimate')} onClick={() => setActiveTab('estimate')}>
+            📑 Смета
           </div>
+
         </div>
 
         {/* Body */}
         <div style={bodyStyle}>
-          {activeTab === 'materials' ? (
+          {activeTab === 'estimate' ? (
             <div style={{ backgroundColor: 'white', borderRadius: '8px', padding: '20px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                <h3 style={{ margin: 0 }}>Отгруженные материалы</h3>
-                <div style={{ color: '#7f8c8d', fontSize: '13px' }}>Всего позиций: {materialItems.length}</div>
+                <h3 style={{ margin: 0 }}>Смета объекта</h3>
+                <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
+                  <div style={{ color: '#7f8c8d', fontSize: '13px' }}>Позиций: {estimateItems.length}</div>
+                  <div style={{ fontWeight: 'bold', color: '#2c3e50', fontSize: '16px' }}>Итого: {estimateTotal.toLocaleString('ru')} ₽</div>
+                </div>
               </div>
 
-              {loadingMaterials ? (
-                <div style={{ padding: '40px', textAlign: 'center', color: '#7f8c8d' }}>Загрузка данных...</div>
+              {loadingEstimate ? (
+                <div style={{ padding: '40px', textAlign: 'center', color: '#7f8c8d' }}>Загрузка сметы...</div>
               ) : (
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                  <thead>
-                    <tr style={{ backgroundColor: '#f8f9fa', borderBottom: '2px solid #ecf0f1', color: '#7f8c8d' }}>
-                      <th style={{ padding: '12px 10px', textAlign: 'left' }}>Дата</th>
-                      <th style={{ padding: '12px 10px', textAlign: 'left' }}>№ УПД</th>
-                      <th style={{ padding: '12px 10px', textAlign: 'left' }}>Поставщик</th>
-                      <th style={{ padding: '12px 10px', textAlign: 'left' }}>Наименование</th>
-                      <th style={{ padding: '12px 10px', textAlign: 'center' }}>Ед.</th>
-                      <th style={{ padding: '12px 10px', textAlign: 'right' }}>Кол-во</th>
-                      <th style={{ padding: '12px 10px', textAlign: 'right' }}>Цена</th>
-                      <th style={{ padding: '12px 10px', textAlign: 'right' }}>Сумма</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {materialItems.length > 0 ? materialItems.map((item) => (
-                      <tr key={item.id} style={{ borderBottom: '1px solid #ecf0f1', transition: 'background-color 0.1s' }}>
-                        <td style={{ padding: '10px' }}>{item.document_date ? new Date(item.document_date).toLocaleDateString('ru') : '-'}</td>
-                        <td style={{ padding: '10px' }}>{item.document_number}</td>
-                        <td style={{ padding: '10px' }}>{item.supplier_name}</td>
-                        <td style={{ padding: '10px', fontWeight: '500', maxWidth: '300px' }}>{item.product_name}</td>
-                        <td style={{ padding: '10px', textAlign: 'center' }}>{item.unit}</td>
-                        <td style={{ padding: '10px', textAlign: 'right' }}>{item.quantity.toLocaleString('ru')}</td>
-                        <td style={{ padding: '10px', textAlign: 'right', whiteSpace: 'nowrap' }}>{item.price.toLocaleString('ru')} ₽</td>
-                        <td style={{ padding: '10px', textAlign: 'right', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{item.amount.toLocaleString('ru')} ₽</td>
-                      </tr>
-                    )) : (
-                      <tr>
-                        <td colSpan={8} style={{ padding: '30px', textAlign: 'center', color: '#999' }}>Нет данных о закупках</td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
+                <div style={{ border: '1px solid #ddd', borderRadius: '4px' }}>
+                  {Object.keys(groupedEstimate).length === 0 ? (
+                    <div style={{ padding: '40px', textAlign: 'center', color: '#999' }}>Смета не загружена</div>
+                  ) : (
+                    Object.keys(groupedEstimate).map(category => (
+                      <div key={category}>
+                        {/* Category Header */}
+                        <div
+                          onClick={() => toggleGroup(category)}
+                          style={{
+                            padding: '12px 15px',
+                            backgroundColor: '#f1f2f6',
+                            fontWeight: 'bold',
+                            borderBottom: '1px solid #ddd',
+                            borderTop: '1px solid #ddd',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center'
+                          }}
+                        >
+                          <span>{category}</span>
+                          <span>{collapsedGroups.has(category) ? '▼' : '▲'}</span>
+                        </div>
+
+                        {/* Items Table */}
+                        {!collapsedGroups.has(category) && (
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                            <thead>
+                              <tr style={{ backgroundColor: '#fff', borderBottom: '1px solid #ecf0f1', color: '#95a5a6', fontSize: '12px' }}>
+                                <th style={{ padding: '8px 10px', textAlign: 'center', width: '50px' }}>№</th>
+                                <th style={{ padding: '8px 10px', textAlign: 'left' }}>Наименование</th>
+                                <th style={{ padding: '8px 10px', textAlign: 'center', width: '60px' }}>Ед.</th>
+                                <th style={{ padding: '8px 10px', textAlign: 'right', width: '80px' }}>Кол-во</th>
+                                <th style={{ padding: '8px 10px', textAlign: 'right', width: '90px' }}>Отгружено</th>
+                                <th style={{ padding: '8px 10px', textAlign: 'right', width: '90px' }}>Остаток</th>
+                                <th style={{ padding: '8px 10px', textAlign: 'right', width: '100px' }}>Цена</th>
+                                <th style={{ padding: '8px 10px', textAlign: 'right', width: '120px' }}>Сумма</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {groupedEstimate[category].map((item, idx) => (
+                                <tr
+                                  key={item.id}
+                                  style={{
+                                    borderBottom: '1px solid #f5f6fa',
+                                    backgroundColor: (item.remaining_quantity || 0) < 0 ? '#ffe6e6' : 'transparent'
+                                  }}
+                                >
+                                  <td style={{ padding: '8px 10px', textAlign: 'center', color: '#7f8c8d' }}>{idx + 1}</td>
+                                  <td style={{ padding: '8px 10px', fontWeight: '500' }}>{item.name}</td>
+                                  <td style={{ padding: '8px 10px', textAlign: 'center' }}>{item.unit}</td>
+                                  <td style={{ padding: '8px 10px', textAlign: 'right' }}>{item.quantity.toLocaleString('ru')}</td>
+                                  <td style={{ padding: '8px 10px', textAlign: 'right' }}>{(item.delivered_quantity || 0).toLocaleString('ru')}</td>
+                                  <td style={{
+                                    padding: '8px 10px',
+                                    textAlign: 'right',
+                                    color: (item.remaining_quantity || 0) < 0 ? '#e74c3c' : 'inherit',
+                                    fontWeight: (item.remaining_quantity || 0) < 0 ? 'bold' : 'normal'
+                                  }}>
+                                    {(item.remaining_quantity || 0).toLocaleString('ru')}
+                                  </td>
+                                  <td style={{ padding: '8px 10px', textAlign: 'right' }}>{item.price.toLocaleString('ru')}</td>
+                                  <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: '600' }}>{item.total_amount.toLocaleString('ru')}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        )}
+                      </div>
+                    ))
+                  )}
+                  {/* Grand Total Footer */}
+                  <div style={{ padding: '15px 20px', backgroundColor: '#ecf0f1', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', borderTop: '2px solid #bdc3c7' }}>
+                    <span>ИТОГО ПО СМЕТЕ:</span>
+                    <span>{estimateTotal.toLocaleString('ru')} ₽</span>
+                  </div>
+                </div>
               )}
             </div>
           ) : (
@@ -615,21 +723,44 @@ export function ObjectDetailPage() {
                   <div style={miniTablesGridStyle}>
                     {/* 1. Зарплата рабочих (РТБ) */}
                     <div style={miniTableContainerStyle}>
-                      <div style={miniTableHeaderStyle}>ЗАРПЛАТА РАБОЧИХ</div>
+                      <div style={miniTableHeaderStyle}>ЗАРПЛАТА РАБОЧИХ (ПО ТАБЕЛЯМ)</div>
                       <table style={miniTableStyle}>
                         <thead>
                           <tr>
-                            <th style={miniThStyle}>ВИД РАБОТ</th>
-                            <th style={miniThStyle}>ДАТА</th>
-                            <th style={miniThStyle}>СУММА ОПЛАТЫ</th>
+                            <th style={miniThStyle}>ПЕРИОД / БРИГАДА</th>
+                            <th style={miniThStyle}>СУММА (ФАКТ)</th>
+                            <th style={{ ...miniThStyle, width: '30px' }}></th>
                           </tr>
                         </thead>
                         <tbody>
-                          {costs.labor.length > 0 ? costs.labor.slice(0, 10).map((cost) => (
-                            <tr key={cost.id}>
-                              <td style={miniTdStyle}>{cost.description || '—'}</td>
-                              <td style={miniTdStyle}>{cost.date || '—'}</td>
-                              <td style={miniTdStyle}>{cost.amount.toLocaleString('ru')} ₽</td>
+                          {timesheetSummaries.length > 0 ? timesheetSummaries.slice(0, 10).map((ts) => (
+                            <tr key={ts.id}>
+                              <td style={miniTdStyle}>
+                                <div style={{ fontWeight: 'bold' }}>
+                                  {new Date(ts.period_start).toLocaleDateString('ru', { day: '2-digit', month: '2-digit' })} - {new Date(ts.period_end).toLocaleDateString('ru', { day: '2-digit', month: '2-digit' })}
+                                </div>
+                                <div style={{ fontSize: '10px', color: '#7f8c8d' }}>{ts.brigade_name}</div>
+                              </td>
+                              <td style={miniTdStyle}>
+                                <div style={{ fontWeight: 'bold' }}>{ts.total_amount.toLocaleString('ru')} ₽</div>
+                                <div style={{ fontSize: '10px', color: '#7f8c8d' }}>{ts.total_hours} ч.</div>
+                              </td>
+                              <td style={miniTdStyle}>
+                                <button
+                                  onClick={() => setSelectedTimesheet(ts)}
+                                  style={{
+                                    border: '1px solid #ddd',
+                                    background: 'white',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer',
+                                    padding: '2px 6px',
+                                    fontSize: '10px'
+                                  }}
+                                  title="Подробнее"
+                                >
+                                  👁️
+                                </button>
+                              </td>
                             </tr>
                           )) : (
                             <tr><td colSpan={3} style={{ ...miniTdStyle, textAlign: 'center', color: '#999' }}>Нет данных</td></tr>
@@ -637,8 +768,10 @@ export function ObjectDetailPage() {
                         </tbody>
                         <tfoot>
                           <tr style={{ backgroundColor: '#f0f0f0' }}>
-                            <td colSpan={2} style={{ ...miniTdStyle, fontWeight: 'bold' }}>сумма</td>
-                            <td style={{ ...miniTdStyle, fontWeight: 'bold' }}>{costs.summary.labor_total.toLocaleString('ru')} ₽</td>
+                            <td style={{ ...miniTdStyle, fontWeight: 'bold' }}>Итого (по списку)</td>
+                            <td colSpan={2} style={{ ...miniTdStyle, fontWeight: 'bold' }}>
+                              {timesheetSummaries.reduce((acc, curr) => acc + curr.total_amount, 0).toLocaleString('ru')} ₽
+                            </td>
                           </tr>
                         </tfoot>
                       </table>
@@ -733,34 +866,7 @@ export function ObjectDetailPage() {
                                 <td style={miniTdStyle}>{cost.amount.toLocaleString('ru')} ₽</td>
                                 <td style={miniTdStyle}>{cost.document_number || '—'}</td>
                               </tr>
-                              {expandedRows.has(cost.id) && cost.items && cost.items.length > 0 && (
-                                <tr>
-                                  <td colSpan={4} style={{ padding: '0 0 0 20px', backgroundColor: '#f5f5f5' }}>
-                                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
-                                      <thead>
-                                        <tr style={{ backgroundColor: '#e0e0e0' }}>
-                                          <th style={{ padding: '4px 8px', textAlign: 'left' }}>Наименование</th>
-                                          <th style={{ padding: '4px 8px', textAlign: 'right', width: '80px' }}>Кол-во</th>
-                                          <th style={{ padding: '4px 8px', textAlign: 'left', width: '50px' }}>Ед.</th>
-                                          <th style={{ padding: '4px 8px', textAlign: 'right', width: '100px' }}>Цена</th>
-                                          <th style={{ padding: '4px 8px', textAlign: 'right', width: '100px' }}>Сумма</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody>
-                                        {cost.items.map((item) => (
-                                          <tr key={item.id} style={{ borderBottom: '1px solid #ddd' }}>
-                                            <td style={{ padding: '4px 8px' }}>{item.name}</td>
-                                            <td style={{ padding: '4px 8px', textAlign: 'right' }}>{item.quantity}</td>
-                                            <td style={{ padding: '4px 8px' }}>{item.unit}</td>
-                                            <td style={{ padding: '4px 8px', textAlign: 'right' }}>{item.price.toLocaleString('ru')} ₽</td>
-                                            <td style={{ padding: '4px 8px', textAlign: 'right' }}>{item.amount.toLocaleString('ru')} ₽</td>
-                                          </tr>
-                                        ))}
-                                      </tbody>
-                                    </table>
-                                  </td>
-                                </tr>
-                              )}
+
                             </React.Fragment>
                           )) : (
                             <tr><td colSpan={4} style={{ ...miniTdStyle, textAlign: 'center', color: '#999' }}>Нет данных</td></tr>
@@ -782,6 +888,115 @@ export function ObjectDetailPage() {
         </div>
       </div>
 
+      {/* Timesheet Details Modal */}
+      {selectedTimesheet && (
+        <div style={modalOverlayStyle} onClick={() => setSelectedTimesheet(null)}>
+          <div style={{ ...modalContentStyle, maxWidth: '800px' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+              <h2 style={{ margin: 0 }}>Детализация работ</h2>
+              <button
+                onClick={() => setSelectedTimesheet(null)}
+                style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#999' }}
+              >
+                &times;
+              </button>
+            </div>
+
+            <div style={{ marginBottom: '20px', padding: '10px', backgroundColor: '#f9f9f9', borderRadius: '4px' }}>
+              <div style={{ fontWeight: 'bold' }}>{selectedTimesheet.brigade_name}</div>
+              <div style={{ color: '#666' }}>
+                Период: {new Date(selectedTimesheet.period_start).toLocaleDateString('ru')} — {new Date(selectedTimesheet.period_end).toLocaleDateString('ru')}
+              </div>
+              <div style={{ marginTop: '5px' }}>
+                <span style={{
+                  padding: '2px 8px', borderRadius: '10px', fontSize: '12px', fontWeight: 'bold', color: 'white',
+                  backgroundColor: getStatusColor(selectedTimesheet.status)
+                }}>
+                  {selectedTimesheet.status}
+                </span>
+              </div>
+            </div>
+
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+              <thead>
+                <tr style={{ backgroundColor: '#f0f0f0', color: '#555' }}>
+                  <th style={{ padding: '8px', textAlign: 'left' }}>Сотрудник</th>
+                  <th style={{ padding: '8px', textAlign: 'right' }}>Часы</th>
+                  <th style={{ padding: '8px', textAlign: 'right' }}>Ставка</th>
+                  <th style={{ padding: '8px', textAlign: 'right' }}>Сумма</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(() => {
+                  const groupedItems = Object.entries(
+                    selectedTimesheet.items.reduce((acc, item) => {
+                      const dateKey = item.date || 'Без даты'; // Ensure item.date exists
+                      if (!acc[dateKey]) acc[dateKey] = [];
+                      acc[dateKey].push(item);
+                      return acc;
+                    }, {} as Record<string, TimeSheetItemSimple[]>)
+                  ).sort(([dateA], [dateB]) => {
+                    if (dateA === 'Без даты') return 1;
+                    if (dateB === 'Без даты') return -1;
+                    return new Date(dateA).getTime() - new Date(dateB).getTime();
+                  });
+
+                  return groupedItems.map(([date, items]) => {
+                    const isCollapsed = collapsedGroups.has(date);
+                    const dayTotal = items.reduce((sum, i) => sum + (i.amount || 0), 0);
+
+                    return (
+                      <React.Fragment key={date}>
+                        <tr
+                          style={{ backgroundColor: '#e8f4fc', cursor: 'pointer', userSelect: 'none' }}
+                          onClick={() => toggleGroup(date)}
+                        >
+                          <td colSpan={4} style={{ padding: '8px', fontWeight: 'bold' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span>
+                                <span style={{ marginRight: '8px', display: 'inline-block', width: '12px' }}>
+                                  {isCollapsed ? '▶' : '▼'}
+                                </span>
+                                {date !== 'Без даты' ? new Date(date).toLocaleDateString('ru', { weekday: 'short', day: '2-digit', month: '2-digit' }) : date}
+                              </span>
+                              <span style={{ fontSize: '11px', color: '#666', fontWeight: 'normal' }}>
+                                {items.length} чел. | {dayTotal.toLocaleString('ru')} ₽
+                              </span>
+                            </div>
+                          </td>
+                        </tr>
+                        {!isCollapsed && items.map(item => (
+                          <tr key={item.id} style={{ borderBottom: '1px solid #eee' }}>
+                            <td style={{ padding: '8px', paddingLeft: '32px' }}>{item.member_name}</td>
+                            <td style={{ padding: '8px', textAlign: 'right' }}>{item.hours}</td>
+                            <td style={{ padding: '8px', textAlign: 'right' }}>{(item.rate ?? 0).toLocaleString('ru')} ₽</td>
+                            <td style={{ padding: '8px', textAlign: 'right', fontWeight: 'bold' }}>{(item.amount ?? 0).toLocaleString('ru')} ₽</td>
+                          </tr>
+                        ))}
+                      </React.Fragment>
+                    );
+                  });
+                })()}
+              </tbody>
+              <tfoot>
+                <tr style={{ backgroundColor: '#f9f9f9', fontWeight: 'bold' }}>
+                  <td style={{ padding: '10px' }}>ИТОГО</td>
+                  <td style={{ padding: '10px', textAlign: 'right' }}>{selectedTimesheet.total_hours}</td>
+                  <td style={{ padding: '10px', textAlign: 'right' }}>-</td>
+                  <td style={{ padding: '10px', textAlign: 'right' }}>{selectedTimesheet.total_amount.toLocaleString('ru')} ₽</td>
+                </tr>
+              </tfoot>
+            </table>
+
+            <div style={{ marginTop: '20px', textAlign: 'right' }}>
+              <button onClick={() => setSelectedTimesheet(null)} style={secondaryButtonStyle}>
+                Закрыть
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Edit Modal */}
       {showEditModal && (
         <div style={modalOverlayStyle}>
@@ -798,18 +1013,18 @@ export function ObjectDetailPage() {
                   <input type="text" style={inputStyle} value={editFormData.customer_name} onChange={e => setEditFormData({ ...editFormData, customer_name: e.target.value })} />
                 </div>
                 <div style={formGroupStyle}>
-                  <label style={labelStyle}>Договор</label>
+                  <label style={labelStyle}>Договор №</label>
                   <input type="text" style={inputStyle} value={editFormData.contract_number} onChange={e => setEditFormData({ ...editFormData, contract_number: e.target.value })} />
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
                   <div style={formGroupStyle}>
                     <label style={labelStyle}>План материалы (₽)</label>
-                    <input type="number" step="0.01" style={inputStyle} value={editFormData.material_amount} onChange={e => setEditFormData({ ...editFormData, material_amount: parseFloat(e.target.value) })} />
+                    <input type="number" step="0.01" style={inputStyle} value={editFormData.material_amount} onChange={e => setEditFormData({ ...editFormData, material_amount: parseFloat(e.target.value) || 0 })} />
                   </div>
                   <div style={formGroupStyle}>
                     <label style={labelStyle}>План работы (₽)</label>
-                    <input type="number" step="0.01" style={inputStyle} value={editFormData.labor_amount} onChange={e => setEditFormData({ ...editFormData, labor_amount: parseFloat(e.target.value) })} />
+                    <input type="number" step="0.01" style={inputStyle} value={editFormData.labor_amount} onChange={e => setEditFormData({ ...editFormData, labor_amount: parseFloat(e.target.value) || 0 })} />
                   </div>
                 </div>
 
@@ -818,10 +1033,10 @@ export function ObjectDetailPage() {
 
                 <div style={formGroupStyle}>
                   <label style={labelStyle}>Описание</label>
-                  <textarea style={{ ...inputStyle, height: '80px', resize: 'vertical' }} value={editFormData.description} onChange={e => setEditFormData({ ...editFormData, description: e.target.value })} />
+                  <textarea style={{ ...inputStyle, minHeight: '80px', resize: 'vertical' }} value={editFormData.description} onChange={e => setEditFormData({ ...editFormData, description: e.target.value })} />
                 </div>
 
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px', paddingTop: '15px', borderTop: '1px solid #eee' }}>
+                <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
                   <button type="button" onClick={() => setShowEditModal(false)} style={backButtonStyle}>Отмена</button>
                   <button type="submit" style={primaryButtonStyle}>Сохранить</button>
                 </div>

@@ -3,7 +3,7 @@ import re
 from datetime import datetime
 from aiogram import Router, F
 from aiogram.filters import Command, CommandStart
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from aiogram.fsm.context import FSMContext
 
 from app.bot.keyboards import (
@@ -680,3 +680,27 @@ async def request_access_menu(message: Message, state: FSMContext):
     # Перенаправляем на команду /request-access
     from app.bot.handlers.objects import cmd_request_access
     await cmd_request_access(message, state)
+
+
+@router.message(Command("test"))
+async def cmd_test(message: Message):
+    """Команда /test для тестирования Mini Apps"""
+    base_url = config.web_app_url.rstrip('/')
+    
+    # Формируем ссылки
+    timesheet_url = f"{base_url}/miniapp/timesheets"
+    manager_url = f"{base_url}/miniapp/manager"
+    estimates_url = f"{base_url}/miniapp/estimates"
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="👷‍♂️ Табель (Прораб)", url=timesheet_url)],
+        [InlineKeyboardButton(text="📋 Сметы (Прораб)", url=estimates_url)],
+        [InlineKeyboardButton(text="📊 Руководитель (Отчет)", url=manager_url)]
+    ])
+    
+    await message.answer(
+        "🧪 <b>Тестовые ссылки (Mini Apps)</b>\n\n"
+        "Нажмите на кнопки ниже для открытия приложений:",
+        reply_markup=keyboard,
+        parse_mode="HTML"
+    )

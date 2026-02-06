@@ -15,7 +15,11 @@ from app.core.config import settings
 # Настройка логирования
 logging.basicConfig(
     level=logging.DEBUG if settings.debug else logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler("app.log", encoding="utf-8")
+    ]
 )
 logger = logging.getLogger(__name__)
 
@@ -93,7 +97,7 @@ async def health_check():
 # Подключение роутеров модулей
 from app.auth.router import router as auth_router
 from app.objects.router import router as objects_router
-from app.time_sheets.router import router as time_sheets_router
+
 from app.equipment.router import router as equipment_router
 from app.materials.router import router as materials_router
 from app.upd.router import router as upd_router
@@ -105,6 +109,7 @@ from app.users.telegram_link_router import router as telegram_link_router
 from app.api.routes.audit import router as audit_router
 from app.websocket.router import router as websocket_router
 from app.costs.router import router as costs_router
+from app.api.v2.timesheets import router as timesheets_v2_router
 
 # Audit middleware (должен быть после CORS)
 from app.middleware.audit import AuditMiddleware
@@ -117,7 +122,7 @@ app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 app.include_router(auth_router, prefix=f"{settings.api_v1_prefix}/auth", tags=["Authentication"])
 app.include_router(objects_router, prefix=f"{settings.api_v1_prefix}/objects", tags=["Objects"])
-app.include_router(time_sheets_router, prefix=f"{settings.api_v1_prefix}/time-sheets", tags=["Time Sheets (РТБ)"])
+
 app.include_router(equipment_router, prefix=f"{settings.api_v1_prefix}/equipment-orders", tags=["Equipment"])
 app.include_router(materials_router, prefix=f"{settings.api_v1_prefix}/material-requests", tags=["Materials"])
 app.include_router(upd_router, prefix=f"{settings.api_v1_prefix}/material-costs", tags=["UPD Documents"])
@@ -128,6 +133,7 @@ app.include_router(registration_router, prefix=f"{settings.api_v1_prefix}/regist
 app.include_router(users_router, prefix=f"{settings.api_v1_prefix}/users", tags=["Users"])
 app.include_router(telegram_link_router, prefix=f"{settings.api_v1_prefix}/users", tags=["Telegram Link"])
 app.include_router(audit_router, prefix=f"{settings.api_v1_prefix}/audit", tags=["Audit Log"])
+app.include_router(timesheets_v2_router, prefix="/api/v2/miniapp", tags=["Mini App Timesheets"])
 app.include_router(websocket_router, prefix=f"{settings.api_v1_prefix}", tags=["WebSocket"])
 
 

@@ -132,7 +132,7 @@ class ObjectService:
         - Техника (из EquipmentCost)
         - ФОТ (из TimeSheet)
         """
-        from app.models import MaterialCost, EquipmentCost, TimeSheet
+        from app.models import MaterialCost, EquipmentCost
         from sqlalchemy import func, select
         
         # Материалы
@@ -149,17 +149,8 @@ class ObjectService:
         equipment_result = await session.execute(equipment_query)
         equipment_total = equipment_result.scalar() or 0.0
         
-        # ФОТ (через TimeSheetItem)
-        from app.models import TimeSheetItem
-        labor_query = select(
-            func.sum(TimeSheetItem.hours * TimeSheet.hour_rate)
-        ).select_from(TimeSheetItem).join(
-            TimeSheet
-        ).where(
-            TimeSheetItem.cost_object_id == object_id
-        )
-        labor_result = await session.execute(labor_query)
-        labor_total = labor_result.scalar() or 0.0
+        # ФОТ (Legacy TimeSheet removed)
+        labor_total = 0.0
         
         total_spent = materials_total + equipment_total + labor_total
         

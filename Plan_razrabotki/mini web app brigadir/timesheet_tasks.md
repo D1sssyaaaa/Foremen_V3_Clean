@@ -1,0 +1,78 @@
+# Task: Implement TimeSheet Mini App
+
+## Status
+- [x] **Database & Backend**
+    - [x] Create `rtb_time_entries` and `rtb_recent_workers` models
+    - [x] Create API v2 Router (`backend/app/api/v2/timesheets.py`)
+    - [x] Implement `init`, `recent_workers` endpoints
+    - [x] Implement `submit` endpoint
+- [x] **Frontend Foundation**
+    - [x] Install `framer-motion` and `@twa-dev/sdk`
+    - [x] Create `frontend/src/miniapp` structure
+    - [x] Setup `useTimeSheetStore` (Zustand)
+- [x] **UI Implementation**
+    - [x] Create `GlassCard`, `GlassButton` components
+    - [x] Implement `DateSlider` component
+    - [x] Implement `WorkerList` with +/- controls
+    - [x] Implement `ObjectSelection` screen
+- [x] **Integration**
+    - [x] Connect Frontend to Backend API
+    - [x] Add Telegram "Mini App" Button to Bot
+- [x] **Verification**
+    - [x] Server Startup (Backend & Frontend)
+    - [x] Fix UI Styling (Install/Config Tailwind)
+- [ ] **UX Improvements**
+    - [x] Refactor Store for "Drafts" (Multi-object support)
+    - [x] Implement "Next Day" Navigation
+    - [x] Implement Object Switcher
+    - [x] **Feature: Brigade Management**
+        - [x] Create Settings Page (Manage Brigade)
+        - [x] Implement Auto-population of workers from Brigade
+    - [x] **Feature: Worker Status**
+        - [x] Add "Did Not Work" button to Worker Row
+        - [x] Handle "Active/Inactive" status in Store
+    - [x] **Feature: Auto-add Foreman (Telegram User)**
+        - [x] Extract user from `WebApp.initData`
+        - [x] Add as "Brigadier" to timesheet automatically
+    - [x] **Feature: Foreman Profile (Settings)**
+        - [x] Add Profile Fields (DOB, Phone) to Store
+        - [x] Create Profile Editor in Settings Page
+    - [x] **Refinement: Cleanup**
+        - [x] Remove "Add One-time Worker" button
+        - [x] Remove "In-line Name Editing" (moved to Settings)
+    - [x] **Refinement: iOS Polish**
+        - [x] Object Selector (Dropdown/Sheet instead of Tabs)
+        - [x] Date Slider (2-letter Ru abbreviations, Month display)
+        - [x] Navigation: Prev/Next Day buttons
+        - [x] Fix Layout issues
+    - [x] "Submit All" functionality
+    - [x] Manual Test Flow
+    - [x] Verify Data Persistence
+
+## Manager Mini App (Current Focus)
+- [x] **UI Framework**
+    - [x] Create High Contrast Theme (Light/Dark handling)
+    - [x] Implement Theme Toggle
+- [x] **Object Detail Page**
+    - [x] Fix White Screen/Contrast Issues
+    - [x] Implement Gradient Bar Charts with Rounded Corners
+    - [x] Add 'Structure' Pie Chart (Donut style)
+    - [ ] **Mobile Optimization**
+        - [x] Add Permanent Data Labels to Charts
+        - [x] Remove Hover Tooltips (Touch friendly)
+        - [x] Implement Transaction Details Modal (Centered)
+
+## Phase 2: Production Integration
+- [ ] **Backend Implementation**
+    - [ ] Create PostgreSQL Tables (`timesheet_batches`, `entries`)
+    - [ ] Implement `GET /api/objects` (Remove Mock)
+    - [ ] Implement `GET /api/timesheets/history` (Remove Mock)
+    - [ ] Implement `POST /api/timesheet/submit` (With Approval Workflow)
+- [ ] **Frontend Connection**
+    - [ ] Replace `objects` constant with API call
+    - [ ] Replace `MOCK_HISTORY` with API call
+    - [ ] Add Loading States for data fetching
+- [ ] **Deployment**
+    - [ ] Push Frontend to GitHub Pages
+    - [ ] Configure Telegram Bot Menu Button
+    - [ ] Verify End-to-End Flow

@@ -174,6 +174,11 @@ async def login(
     except HTTPException:
         raise
     except Exception as e:
+        import traceback
+        print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+        print("LOGIN CRASH TRACEBACK:")
+        traceback.print_exc()
+        print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
         logger.error(f"Unexpected error during login: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -473,6 +478,107 @@ async def telegram_login(
         raise
     except Exception as e:
         logger.error(f"Unexpected error during Telegram login: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Internal server error: {str(e)}"
+        )
+
+
+class TelegramMiniAppAuthRequest(BaseModel):
+    """Схема запроса авторизации через Telegram Mini App"""
+    init_data: str
+
+
+@router.post("/telegram", response_model=schemas.Token)
+async def telegram_miniapp_auth(
+    request: TelegramMiniAppAuthRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Авторизация через Telegram Mini App
+    
+    - Проверяет подпись initData от Telegram Web App
+    - Возвращает JWT токены для доступа к API
+    """
+    from hashlib import sha256
+    import hmac
+    from urllib.parse import parse_qsl
+    from app.core.config import settings
+    
+    try:
+        logger.info("Telegram Mini App auth attempt")
+        
+        # 1. Парсинг initData
+        parsed_data = dict(parse_qsl(request.init_data))
+        received_hash = parsed_data.pop('hash', '')
+        
+        if not received_hash:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Missing hash in init data"
+            )
+        
+        # 2. Проверка подписи
+        data_check_string = '\n'.join(f"{k}={v}" for k, v in sorted(parsed_data.items()))
+        secret_key = sha256(settings.telegram_bot_token.encode()).digest()
+        calculated_hash = hmac.new(secret_key, data_check_string.encode(), sha256).hexdigest()
+        
+        if calculated_hash != received_hash:
+            logger.warning("Invalid Telegram Mini App signature")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication data"
+            )
+        
+        # 3. Извлечение telegram_id
+        user_data = json.loads(parsed_data.get('user', '{}'))
+        telegram_id = user_data.get('id')
+        
+        if not telegram_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No user ID in init data"
+            )
+        
+        # 4. Поиск пользователя
+        result = await db.execute(
+            select(User).where(User.telegram_chat_id == telegram_id)
+        )
+        user = result.scalar_one_or_none()
+        
+        if not user:
+            logger.warning(f"User not found for Telegram ID {telegram_id}")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Пользователь не найден. Обратитесь к администратору."
+            )
+        
+        if not user.is_active:
+            logger.warning(f"Inactive user attempted Mini App login: {user.username}")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Аккаунт деактивирован"
+            )
+        
+        # 5. Создание JWT токенов
+        user_id_str = str(user.id)
+        roles = user.roles if isinstance(user.roles, list) else json.loads(user.roles) if isinstance(user.roles, str) else []
+        
+        access_token = create_access_token(data={"sub": user_id_str, "roles": roles})
+        refresh_token = create_refresh_token(data={"sub": user_id_str})
+        
+        logger.info(f"Telegram Mini App auth successful for user {user.username} (TG ID: {telegram_id})")
+        
+        return schemas.Token(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            token_type="bearer"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error during Telegram Mini App auth: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Internal server error: {str(e)}"

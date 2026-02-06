@@ -1,21 +1,42 @@
-* {
-  box-sizing: border-box;
-}
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
+@layer base {
+  :root {
+    --bg-ios: #F2F2F7;
+    --bg-card: #FFFFFF;
+    --text-primary: #000000;
+    --text-secondary: #8E8E93;
+    --text-ios-gray: #8E8E93;
+    --blue-ios: #007AFF;
+    --separator: #3C3C434D;
+    /* Using semi-transparent for better blending */
+    --separator-opaque: #C6C6C8;
+    --bg-pressed: #E5E5EA;
+  }
 
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
-}
+  .dark {
+    --bg-ios: #000000;
+    --bg-card: #1C1C1E;
+    --text-primary: #FFFFFF;
+    --text-secondary: #98989D;
+    --text-ios-gray: #8E8E93;
+    --blue-ios: #0A84FF;
+    --separator: #545458A6;
+    --separator-opaque: #38383A;
+    --bg-pressed: #2C2C2E;
+  }
 
-#root {
-  min-height: 100vh;
+  body {
+    background-color: var(--bg-ios);
+    color: var(--text-primary);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Hide scrollbar for native feel */
+  ::-webkit-scrollbar {
+    display: none;
+  }
 }

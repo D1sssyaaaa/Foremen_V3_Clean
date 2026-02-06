@@ -45,32 +45,7 @@ class EquipmentOrderStates(StatesGroup):
     cancel_reason = State()  # Ввод причины отмены
 
 
-class TimeSheetStates(StatesGroup):
-    """Состояния подачи табеля РТБ"""
-    # Выбор способа подачи (шаблон / ручной ввод / Excel)
-    select_method = State()
-    
-    # === Загрузка Excel ===
-    upload_file = State()
-    
-    # === Ручной ввод: создание бригады ===
-    select_object = State()  # Выбор объекта
-    input_period_start = State()  # Начало периода
-    input_period_end = State()  # Конец периода
-    
-    # === Ручной ввод: добавление работников ===
-    input_worker_name = State()  # ФИО работника
-    input_worker_birth_date = State()  # Дата рождения
-    input_worker_phone = State()  # Телефон
-    add_more_workers = State()  # Добавить еще работника?
-    
-    # === Ручной ввод: часы работы ===
-    input_worker_hours = State()  # Часы для работника
-    next_worker_hours = State()  # Переход к следующему работнику
-    
-    # === Общее ===
-    input_comment = State()
-    confirm = State()
+
 
 
 class RegistrationStates(StatesGroup):
