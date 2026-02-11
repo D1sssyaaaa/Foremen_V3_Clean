@@ -7,8 +7,12 @@ class ApiClient {
   private refreshToken: string | null = null;
 
   constructor() {
+    const baseURL = import.meta.env.VITE_API_URL
+      ? `${import.meta.env.VITE_API_URL}/api/v1`
+      : '/api/v1';
+
     this.client = axios.create({
-      baseURL: '/api/v1',
+      baseURL,
       headers: {
         'Content-Type': 'application/json',
       },
