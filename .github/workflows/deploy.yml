@@ -38,6 +38,10 @@ jobs:
       - name: Build
         run: npm run build
         working-directory: frontend
+
+      - name: Create 404.html
+        run: cp dist/index.html dist/404.html
+        working-directory: frontend
         env:
           VITE_API_URL: ${{ vars.VITE_API_URL }}
 

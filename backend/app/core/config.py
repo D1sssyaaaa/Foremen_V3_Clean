@@ -46,7 +46,7 @@ class Settings(BaseSettings):
 
     
     # CORS
-    allowed_origins: str = "http://localhost:3000,http://localhost:3001,http://localhost:5173"
+    allowed_origins: str = "http://localhost:3000,http://localhost:3001,http://localhost:5173,https://d1sssyaaaa.github.io"
     
     @property
     def allowed_origins_list(self) -> List[str]:
