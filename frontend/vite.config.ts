@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
-  base: './',
+  base: '/Foremen_V3_Clean/',
   server: {
     port: 3000,
     host: '0.0.0.0',
