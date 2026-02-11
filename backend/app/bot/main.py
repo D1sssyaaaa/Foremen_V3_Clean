@@ -5,7 +5,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 
 from app.bot.config import config
-from app.bot.handlers import common, materials, equipment, objects, deliveries, registration, admin
+from app.bot.handlers import common, materials, manager_materials, equipment, manager_equipment, objects, deliveries, registration, admin
 
 from app.bot.notification_worker import start_notification_worker
 
@@ -28,7 +28,9 @@ async def main():
     dp.include_router(common.router)
     dp.include_router(registration.router)
     dp.include_router(materials.router)
+    dp.include_router(manager_materials.router)
     dp.include_router(equipment.router)
+    dp.include_router(manager_equipment.router)
     dp.include_router(deliveries.router)
 
     dp.include_router(objects.router)

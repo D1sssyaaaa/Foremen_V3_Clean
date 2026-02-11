@@ -334,7 +334,31 @@ class EquipmentService:
         await self.db.commit()
         await self.db.refresh(order)
         
+        # 🔔 УВЕДОМЛЕНИЕ: Заявка завершена, нужно подать часы
+        await self._notify_order_completed(order)
+        
         return order
+    
+    async def _notify_order_completed(self, order: EquipmentOrder):
+        """Уведомление о завершении заявки и необходимости подать часы"""
+        try:
+            await self.notification_service.create_notification(
+                user_id=order.foreman_id,
+                notification_type="equipment_order_completed",
+                title="🏁 Работы с техникой завершены",
+                message=(
+                    f"Менеджер завершил работы по заявке <b>#{order.id}</b>.\n"
+                    f"Техника: {order.equipment_type}\n"
+                    f"Пожалуйста, укажите количество отработанных часов."
+                ),
+                data={
+                    "order_id": order.id,
+                    "action": "submit_hours" # Флаг для кнопки
+                }
+            )
+        except Exception as e:
+            import logging
+            logging.error(f"Failed to send completion notification for order {order.id}: {e}")
     
     async def request_cancel(
         self,

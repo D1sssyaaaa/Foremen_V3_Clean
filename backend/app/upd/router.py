@@ -12,7 +12,8 @@ from app.upd.service import UPDService
 from app.upd.schemas import (
     UPDUploadResponse, UPDDetailResponse, UPDListItem,
     DistributeUPDRequest, DistributeUPDResponse,
-    ParsingIssueResponse, UPDItemResponse
+    ParsingIssueResponse, UPDItemResponse,
+    DistributionSuggestions
 )
 
 router = APIRouter()
@@ -298,6 +299,32 @@ async def get_upd_detail(
         created_at=upd.created_at,
         updated_at=upd.updated_at
     )
+
+
+@router.get("/{upd_id}/suggestions", response_model=DistributionSuggestions)
+async def get_upd_suggestions(
+    upd_id: int,
+    cost_object_id: int = None,
+    db: AsyncSession = Depends(get_db),
+    current_user = Depends(require_roles([UserRole.MATERIALS_MANAGER, UserRole.MANAGER]))
+):
+    """
+    Получение предложений по распределению для УПД (Smart Mapping)
+    
+    Использует алгоритмы поиска похожих наименований в смете
+    и исторические данные (ProductAlias)
+    """
+    service = UPDService(db)
+    
+    try:
+        suggestions = await service.suggest_distribution(upd_id, cost_object_id)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+    
+    return suggestions
 
 
 @router.post("/{upd_id}/distribute", response_model=DistributeUPDResponse)

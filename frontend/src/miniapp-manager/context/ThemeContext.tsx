@@ -87,12 +87,16 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
       if (nextTheme.isDark) {
         document.documentElement.classList.add('dark');
-        WebApp.setHeaderColor('#000000');
-        WebApp.setBackgroundColor('#000000');
+        if (WebApp.isVersionAtLeast('6.1')) {
+          WebApp.setHeaderColor('#000000');
+          WebApp.setBackgroundColor('#000000');
+        }
       } else {
         document.documentElement.classList.remove('dark');
-        WebApp.setHeaderColor('#ffffff');
-        WebApp.setBackgroundColor('#F2F2F7');
+        if (WebApp.isVersionAtLeast('6.1')) {
+          WebApp.setHeaderColor('#ffffff');
+          WebApp.setBackgroundColor('#F2F2F7');
+        }
       }
       return nextTheme;
     });
@@ -122,7 +126,10 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           setThemeData(darkTheme);
         }
         WebApp.expand();
-        WebApp.setHeaderColor(WebApp.colorScheme === 'light' ? '#F2F2F7' : '#000000');
+        if (WebApp.isVersionAtLeast('6.1')) {
+          WebApp.setHeaderColor(WebApp.colorScheme === 'light' ? '#F2F2F7' : '#000000');
+          WebApp.setBackgroundColor(WebApp.colorScheme === 'light' ? '#F2F2F7' : '#000000');
+        }
       } else {
         // Default to dark if not Telegram and no preference
         setThemeData(darkTheme);

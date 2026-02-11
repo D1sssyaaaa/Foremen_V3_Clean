@@ -1,7 +1,7 @@
 import React from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTheme, ThemeProvider } from '../context/ThemeContext';
-import { ChevronLeft, FileText, Download, Moon, Sun, X } from 'lucide-react';
+import { ChevronLeft, FileText, Download, Moon, Sun, X, ArrowRight } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, Tooltip, LabelList } from 'recharts';
 
 // MOCK DATA GENERATOR
@@ -110,7 +110,7 @@ const ManagerObjectDetailContent: React.FC = () => {
             >
                 <div className="flex items-center gap-3">
                     <div className="p-2 rounded-full" style={{ backgroundColor: 'rgba(48, 209, 88, 0.2)', color: '#30D158' }}>
-                        <Description size={20} />
+                        <FileText size={20} />
                     </div>
                     <div>
                         <div className="font-semibold text-base">Смета и Лимиты</div>
@@ -197,7 +197,7 @@ const ManagerObjectDetailContent: React.FC = () => {
                                 <LabelList
                                     dataKey="fact"
                                     position="top"
-                                    formatter={(val: number) => (val / 1000000).toFixed(1) + 'M'}
+                                    formatter={(val: any) => (val / 1000000).toFixed(1) + 'M'}
                                     style={{ fill: colors.text_secondary, fontSize: 10, fontWeight: 600 }}
                                     offset={5}
                                 />

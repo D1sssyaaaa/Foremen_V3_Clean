@@ -1,5 +1,16 @@
 import { useState, useEffect } from 'react';
 import { apiClient } from '../api/client';
+import { motion } from 'framer-motion';
+import {
+  BarChart3,
+  Calendar,
+  Download,
+  TrendingUp,
+  Hammer,
+  HardHat,
+  Truck,
+  Filter
+} from 'lucide-react';
 
 interface CostAnalytics {
   object_id: number;
@@ -16,6 +27,9 @@ interface CostByType {
   type: string;
   amount: number;
   percentage: number;
+  color: string;
+  icon: any;
+  bg: string;
 }
 
 export function AnalyticsPage() {
@@ -23,35 +37,36 @@ export function AnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  // Фильтр по объекту - будет использован в будущем (setter с _ чтобы избежать warning)
-  const [selectedObject, _setSelectedObject] = useState<number | null>(null);
 
+  // Set defaults
   useEffect(() => {
-    // Установка дат по умолчанию (текущий месяц)
     const now = new Date();
     const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
     const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-    
-    setStartDate(firstDay.toISOString().split('T')[0]);
-    setEndDate(lastDay.toISOString().split('T')[0]);
+
+    // Adjust for timezone offset to avoid "yesterday" issues
+    const formatDate = (date: Date) => {
+      const d = new Date(date.getTime() - (date.getTimezoneOffset() * 60000));
+      return d.toISOString().split('T')[0];
+    };
+
+    setStartDate(formatDate(firstDay));
+    setEndDate(formatDate(lastDay));
   }, []);
 
   useEffect(() => {
     if (startDate && endDate) {
       loadAnalytics();
     }
-  }, [startDate, endDate, selectedObject]);
+  }, [startDate, endDate]);
 
   const loadAnalytics = async () => {
+    setLoading(true);
     try {
       const params = new URLSearchParams({
         period_start: startDate,
         period_end: endDate,
       });
-      if (selectedObject) {
-        params.append('object_id', selectedObject.toString());
-      }
-      
       const data = await apiClient.get<CostAnalytics[]>(`/analytics/costs?${params}`);
       setAnalytics(data);
     } catch (err) {
@@ -67,19 +82,15 @@ export function AnalyticsPage() {
         period_start: startDate,
         period_end: endDate,
       });
-      if (selectedObject) {
-        params.append('object_id', selectedObject.toString());
-      }
 
-      // Скачивание Excel файла
-      const response = await fetch(`http://192.168.0.235:8000/api/v1/analytics/export?${params}`, {
+      const response = await fetch(`/api/v1/analytics/export?${params}`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('access_token')}`
         }
       });
-      
+
       if (!response.ok) throw new Error('Ошибка экспорта');
-      
+
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -94,281 +105,215 @@ export function AnalyticsPage() {
     }
   };
 
-  const getTotalCosts = () => {
-    return analytics.reduce((sum, item) => sum + item.total_costs, 0);
-  };
+  const getTotalCosts = () => analytics.reduce((sum, item) => sum + item.total_costs, 0);
 
-  const getTotalByType = (): CostByType[] => {
+  const getCostDistributions = (): CostByType[] => {
     const total = getTotalCosts();
-    const laborTotal = analytics.reduce((sum, item) => sum + item.labor_costs, 0);
-    const materialTotal = analytics.reduce((sum, item) => sum + item.material_costs, 0);
-    const equipmentTotal = analytics.reduce((sum, item) => sum + item.equipment_costs, 0);
+    const labor = analytics.reduce((sum, item) => sum + item.labor_costs, 0);
+    const materials = analytics.reduce((sum, item) => sum + item.material_costs, 0);
+    const equipment = analytics.reduce((sum, item) => sum + item.equipment_costs, 0);
 
     return [
-      { type: 'ФОТ', amount: laborTotal, percentage: total > 0 ? (laborTotal / total) * 100 : 0 },
-      { type: 'Материалы', amount: materialTotal, percentage: total > 0 ? (materialTotal / total) * 100 : 0 },
-      { type: 'Техника', amount: equipmentTotal, percentage: total > 0 ? (equipmentTotal / total) * 100 : 0 },
-    ];
+      {
+        type: 'Материалы',
+        amount: materials,
+        percentage: total > 0 ? (materials / total) * 100 : 0,
+        color: 'text-green-600',
+        bg: 'bg-green-100',
+        icon: Hammer
+      },
+      {
+        type: 'ФОТ',
+        amount: labor,
+        percentage: total > 0 ? (labor / total) * 100 : 0,
+        color: 'text-blue-600',
+        bg: 'bg-blue-100',
+        icon: HardHat
+      },
+      {
+        type: 'Техника',
+        amount: equipment,
+        percentage: total > 0 ? (equipment / total) * 100 : 0,
+        color: 'text-orange-600',
+        bg: 'bg-orange-100',
+        icon: Truck
+      },
+    ].sort((a, b) => b.amount - a.amount);
   };
 
-  const getTypeColor = (type: string) => {
-    switch (type) {
-      case 'ФОТ': return '#3498db';
-      case 'Материалы': return '#2ecc71';
-      case 'Техника': return '#f39c12';
-      default: return '#95a5a6';
-    }
-  };
-
-  if (loading && !startDate) {
-    return <div>Загрузка...</div>;
-  }
-
-  const costsByType = getTotalByType();
   const totalCosts = getTotalCosts();
+  const distributions = getCostDistributions();
 
   return (
-    <div>
-      <h1 style={{ marginTop: 0, marginBottom: '20px' }}>Аналитика затрат</h1>
+    <div className="space-y-6 animate-fade-in pb-20 max-w-7xl mx-auto">
+      {/* Header & Controls */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-[var(--text-primary)] tracking-tight flex items-center gap-2">
+            <BarChart3 className="text-[var(--blue-ios)]" /> Аналитика затрат
+          </h1>
+          <p className="text-[var(--text-secondary)]">Финансовые показатели по проектам</p>
+        </div>
 
-      {/* Фильтры */}
-      <div style={{ 
-        backgroundColor: 'white', 
-        padding: '20px', 
-        borderRadius: '8px',
-        marginBottom: '20px',
-        boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-      }}>
-        <div style={{ display: 'flex', gap: '15px', alignItems: 'end', flexWrap: 'wrap' }}>
-          <div style={{ flex: '1', minWidth: '200px' }}>
-            <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px', fontWeight: '500' }}>
-              Период с:
-            </label>
+        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto bg-[var(--bg-card)] p-2 rounded-xl border border-[var(--separator)] shadow-sm">
+          <div className="flex items-center gap-2 px-2">
+            <Calendar size={16} className="text-[var(--text-secondary)]" />
             <input
               type="date"
               value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '10px',
-                border: '1px solid #ddd',
-                borderRadius: '6px',
-                fontSize: '14px'
-              }}
+              onChange={e => setStartDate(e.target.value)}
+              className="bg-transparent border-none outline-none text-sm font-medium w-32"
             />
-          </div>
-          <div style={{ flex: '1', minWidth: '200px' }}>
-            <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px', fontWeight: '500' }}>
-              Период по:
-            </label>
+            <span className="text-[var(--text-secondary)]">-</span>
             <input
               type="date"
               value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '10px',
-                border: '1px solid #ddd',
-                borderRadius: '6px',
-                fontSize: '14px'
-              }}
+              onChange={e => setEndDate(e.target.value)}
+              className="bg-transparent border-none outline-none text-sm font-medium w-32"
             />
           </div>
-          <button
-            onClick={loadAnalytics}
-            style={{
-              padding: '10px 24px',
-              backgroundColor: '#3498db',
-              color: 'white',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontSize: '14px',
-              fontWeight: '500'
-            }}
-          >
-            Применить
-          </button>
+
+          <div className="w-[1px] h-6 bg-[var(--separator)] hidden md:block"></div>
+
           <button
             onClick={handleExport}
-            style={{
-              padding: '10px 24px',
-              backgroundColor: '#2ecc71',
-              color: 'white',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontSize: '14px',
-              fontWeight: '500'
-            }}
+            className="flex items-center gap-2 px-4 py-2 bg-[var(--bg-ios)] hover:bg-[var(--separator)] rounded-lg text-sm font-medium transition-colors ml-auto md:ml-0"
           >
-            📊 Экспорт Excel
+            <Download size={16} /> Экспорт
           </button>
         </div>
       </div>
 
-      {/* Общая статистика */}
-      <div style={{ 
-        display: 'grid', 
-        gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
-        gap: '20px',
-        marginBottom: '20px'
-      }}>
-        <div style={{
-          backgroundColor: 'white',
-          padding: '20px',
-          borderRadius: '8px',
-          boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-          borderLeft: '4px solid #9b59b6'
-        }}>
-          <div style={{ fontSize: '14px', color: '#7f8c8d', marginBottom: '10px' }}>
-            Всего затрат
-          </div>
-          <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#9b59b6' }}>
-            {totalCosts.toLocaleString('ru')} ₽
-          </div>
+      {loading && !totalCosts ? (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {[1, 2, 3, 4].map(i => <div key={i} className="h-32 bg-[var(--bg-card)] rounded-2xl animate-pulse" />)}
         </div>
-
-        {costsByType.map(item => (
-          <div
-            key={item.type}
-            style={{
-              backgroundColor: 'white',
-              padding: '20px',
-              borderRadius: '8px',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-              borderLeft: `4px solid ${getTypeColor(item.type)}`
-            }}
-          >
-            <div style={{ fontSize: '14px', color: '#7f8c8d', marginBottom: '10px' }}>
-              {item.type}
-            </div>
-            <div style={{ fontSize: '28px', fontWeight: 'bold', color: getTypeColor(item.type) }}>
-              {item.amount.toLocaleString('ru')} ₽
-            </div>
-            <div style={{ fontSize: '12px', color: '#95a5a6', marginTop: '5px' }}>
-              {item.percentage.toFixed(1)}% от общей суммы
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* График распределения по типам */}
-      <div style={{ 
-        backgroundColor: 'white', 
-        padding: '20px', 
-        borderRadius: '8px',
-        marginBottom: '20px',
-        boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-      }}>
-        <h3 style={{ marginTop: 0, marginBottom: '20px' }}>Распределение затрат</h3>
-        <div style={{ display: 'flex', gap: '5px', height: '40px', borderRadius: '8px', overflow: 'hidden' }}>
-          {costsByType.map(item => (
-            item.percentage > 0 && (
-              <div
-                key={item.type}
-                style={{
-                  flex: item.percentage,
-                  backgroundColor: getTypeColor(item.type),
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: 'white',
-                  fontSize: '12px',
-                  fontWeight: '600'
-                }}
-                title={`${item.type}: ${item.amount.toLocaleString('ru')} ₽ (${item.percentage.toFixed(1)}%)`}
-              >
-                {item.percentage > 10 ? `${item.percentage.toFixed(0)}%` : ''}
+      ) : (
+        <>
+          {/* KPI Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Total Card */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl p-5 text-white shadow-lg relative overflow-hidden"
+            >
+              <div className="relative z-10">
+                <div className="text-indigo-100 text-sm font-medium mb-1 flex items-center gap-2">
+                  <TrendingUp size={16} /> Всего затрат
+                </div>
+                <div className="text-3xl font-bold tracking-tight">
+                  {totalCosts.toLocaleString('ru-RU')} ₽
+                </div>
               </div>
-            )
-          ))}
-        </div>
-        <div style={{ display: 'flex', gap: '20px', marginTop: '15px', flexWrap: 'wrap' }}>
-          {costsByType.map(item => (
-            <div key={item.type} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <div style={{
-                width: '16px',
-                height: '16px',
-                borderRadius: '3px',
-                backgroundColor: getTypeColor(item.type)
-              }} />
-              <span style={{ fontSize: '14px', color: '#7f8c8d' }}>
-                {item.type}: <strong>{item.amount.toLocaleString('ru')} ₽</strong>
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
+              <div className="absolute right-0 bottom-0 opacity-10 transform translate-x-4 translate-y-4">
+                <BarChart3 size={120} />
+              </div>
+            </motion.div>
 
-      {/* Таблица по объектам */}
-      <div style={{ 
-        backgroundColor: 'white', 
-        borderRadius: '8px',
-        overflow: 'hidden',
-        boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-      }}>
-        <div style={{ padding: '20px', borderBottom: '1px solid #ecf0f1' }}>
-          <h3 style={{ margin: 0 }}>Детализация по объектам</h3>
-        </div>
-        
-        {analytics.length === 0 ? (
-          <div style={{ padding: '40px', textAlign: 'center', color: '#7f8c8d' }}>
-            Нет данных за выбранный период
+            {/* Distribution Cards */}
+            {distributions.map((item, idx) => (
+              <motion.div
+                key={item.type}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: idx * 0.1 }}
+                className="bg-[var(--bg-card)] rounded-2xl p-5 border border-[var(--separator)] shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow"
+              >
+                <div className="flex justify-between items-start mb-4">
+                  <div className={`p-2 rounded-xl ${item.bg} ${item.color}`}>
+                    <item.icon size={20} />
+                  </div>
+                  <span className={`text-xs font-bold px-2 py-1 rounded-full ${item.bg} ${item.color}`}>
+                    {item.percentage.toFixed(1)}%
+                  </span>
+                </div>
+                <div>
+                  <div className="text-[var(--text-secondary)] text-sm font-medium">{item.type}</div>
+                  <div className="text-xl font-bold text-[var(--text-primary)]">
+                    {item.amount.toLocaleString('ru-RU')} ₽
+                  </div>
+                  <div className="w-full h-1.5 bg-[var(--bg-ios)] rounded-full mt-3 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full ${item.bg.replace('bg-', 'bg-opacity-100 bg-')}`}
+                      style={{ width: `${item.percentage}%`, backgroundColor: 'currentColor' }}
+                    />
+                  </div>
+                </div>
+              </motion.div>
+            ))}
           </div>
-        ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ backgroundColor: '#f8f9fa', borderBottom: '2px solid #dee2e6' }}>
-                <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600' }}>Объект</th>
-                <th style={{ padding: '12px', textAlign: 'right', fontWeight: '600' }}>ФОТ</th>
-                <th style={{ padding: '12px', textAlign: 'right', fontWeight: '600' }}>Материалы</th>
-                <th style={{ padding: '12px', textAlign: 'right', fontWeight: '600' }}>Техника</th>
-                <th style={{ padding: '12px', textAlign: 'right', fontWeight: '600' }}>Всего</th>
-                <th style={{ padding: '12px', textAlign: 'right', fontWeight: '600' }}>% от общих</th>
-              </tr>
-            </thead>
-            <tbody>
-              {analytics.map(item => (
-                <tr key={item.object_id} style={{ borderBottom: '1px solid #ecf0f1' }}>
-                  <td style={{ padding: '12px', fontWeight: '500' }}>{item.object_name}</td>
-                  <td style={{ padding: '12px', textAlign: 'right', color: '#3498db' }}>
-                    {item.labor_costs.toLocaleString('ru')} ₽
-                  </td>
-                  <td style={{ padding: '12px', textAlign: 'right', color: '#2ecc71' }}>
-                    {item.material_costs.toLocaleString('ru')} ₽
-                  </td>
-                  <td style={{ padding: '12px', textAlign: 'right', color: '#f39c12' }}>
-                    {item.equipment_costs.toLocaleString('ru')} ₽
-                  </td>
-                  <td style={{ padding: '12px', textAlign: 'right', fontWeight: '600', fontSize: '15px' }}>
-                    {item.total_costs.toLocaleString('ru')} ₽
-                  </td>
-                  <td style={{ padding: '12px', textAlign: 'right', color: '#7f8c8d' }}>
-                    {totalCosts > 0 ? ((item.total_costs / totalCosts) * 100).toFixed(1) : 0}%
-                  </td>
-                </tr>
-              ))}
-              <tr style={{ backgroundColor: '#f8f9fa', fontWeight: '600' }}>
-                <td style={{ padding: '12px' }}>ИТОГО</td>
-                <td style={{ padding: '12px', textAlign: 'right', color: '#3498db' }}>
-                  {costsByType.find(c => c.type === 'ФОТ')?.amount.toLocaleString('ru')} ₽
-                </td>
-                <td style={{ padding: '12px', textAlign: 'right', color: '#2ecc71' }}>
-                  {costsByType.find(c => c.type === 'Материалы')?.amount.toLocaleString('ru')} ₽
-                </td>
-                <td style={{ padding: '12px', textAlign: 'right', color: '#f39c12' }}>
-                  {costsByType.find(c => c.type === 'Техника')?.amount.toLocaleString('ru')} ₽
-                </td>
-                <td style={{ padding: '12px', textAlign: 'right', fontSize: '16px' }}>
-                  {totalCosts.toLocaleString('ru')} ₽
-                </td>
-                <td style={{ padding: '12px', textAlign: 'right' }}>100%</td>
-              </tr>
-            </tbody>
-          </table>
-        )}
-      </div>
+
+          {/* Objects Table */}
+          <div className="bg-[var(--bg-card)] rounded-2xl border border-[var(--separator)] shadow-sm overflow-hidden">
+            <div className="p-4 border-b border-[var(--separator)] bg-[var(--bg-ios)] flex justify-between items-center">
+              <h3 className="font-bold text-[var(--text-primary)]">Детализация по объектам</h3>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-[var(--separator)] bg-[var(--bg-card)]">
+                    <th className="text-left p-4 font-medium text-[var(--text-secondary)]">Объект</th>
+                    <th className="text-right p-4 font-medium text-[var(--text-secondary)]">Материалы</th>
+                    <th className="text-right p-4 font-medium text-[var(--text-secondary)]">ФОТ</th>
+                    <th className="text-right p-4 font-medium text-[var(--text-secondary)]">Техника</th>
+                    <th className="text-right p-4 font-medium text-[var(--text-primary)]">Итого</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--separator)]">
+                  {analytics.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="p-8 text-center text-[var(--text-secondary)]">
+                        Нет данных за выбранный период
+                      </td>
+                    </tr>
+                  ) : (
+                    analytics.map(item => (
+                      <tr key={item.object_id} className="hover:bg-[var(--bg-ios)] transition-colors group">
+                        <td className="p-4 font-medium text-[var(--text-primary)]">
+                          {item.object_name}
+                        </td>
+                        <td className="p-4 text-right tabular-nums text-[var(--text-secondary)]">
+                          {item.material_costs.toLocaleString('ru-RU')}
+                        </td>
+                        <td className="p-4 text-right tabular-nums text-[var(--text-secondary)]">
+                          {item.labor_costs.toLocaleString('ru-RU')}
+                        </td>
+                        <td className="p-4 text-right tabular-nums text-[var(--text-secondary)]">
+                          {item.equipment_costs.toLocaleString('ru-RU')}
+                        </td>
+                        <td className="p-4 text-right tabular-nums font-bold text-[var(--text-primary)] group-hover:text-[var(--blue-ios)]">
+                          {item.total_costs.toLocaleString('ru-RU')}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+                {analytics.length > 0 && (
+                  <tfoot>
+                    <tr className="bg-[var(--bg-ios)] font-bold text-[var(--text-primary)]">
+                      <td className="p-4">ИТОГО</td>
+                      <td className="p-4 text-right tabular-nums text-green-700">
+                        {distributions.find(d => d.type === 'Материалы')?.amount.toLocaleString('ru-RU')}
+                      </td>
+                      <td className="p-4 text-right tabular-nums text-blue-700">
+                        {distributions.find(d => d.type === 'ФОТ')?.amount.toLocaleString('ru-RU')}
+                      </td>
+                      <td className="p-4 text-right tabular-nums text-orange-700">
+                        {distributions.find(d => d.type === 'Техника')?.amount.toLocaleString('ru-RU')}
+                      </td>
+                      <td className="p-4 text-right tabular-nums text-lg">
+                        {totalCosts.toLocaleString('ru-RU')}
+                      </td>
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

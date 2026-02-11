@@ -1,6 +1,33 @@
+
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '../api/client';
-import type { UPDDocument, UPDDetailResponse, CostObject } from '../types';
+import { updApi } from '../api/updApi';
+import type { UPDDocument, UPDDetailResponse, CostObject, DistributionSuggestionItem } from '../types';
+import { motion } from 'framer-motion';
+import {
+  Download,
+  Eye,
+  ChevronDown,
+  ChevronUp,
+  Filter,
+  MoreVertical,
+  FileText,
+  AlertTriangle,
+  RefreshCw,
+  Trash2,
+  Calendar,
+  Printer,
+  Upload,
+  Link,
+  X,
+  Copy,
+  Share2,
+  ExternalLink,
+  AlertCircle, // Kept as it's used
+  Split, // Kept as it's used
+  Box, // Kept as it's used
+  Loader2 // Kept as it's used
+} from 'lucide-react';
 
 export function UPDPage() {
   const [upds, setUpds] = useState<UPDDocument[]>([]);
@@ -17,7 +44,11 @@ export function UPDPage() {
   const [objects, setObjects] = useState<CostObject[]>([]);
   const [distributeModalOpen, setDistributeModalOpen] = useState(false);
   const [selectedUpdForDistribution, setSelectedUpdForDistribution] = useState<number | null>(null);
-  const [selectedObjectId, setSelectedObjectId] = useState<number | null>(null);
+
+  // Smart Distribution State
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+  const [suggestions, setSuggestions] = useState<DistributionSuggestionItem[]>([]);
+  const [distributionDraft, setDistributionDraft] = useState<Record<number, number | null>>({}); // itemId -> objectId
 
   useEffect(() => {
     loadUPDs();
@@ -27,54 +58,20 @@ export function UPDPage() {
   const loadObjects = async () => {
     try {
       const data = await apiClient.get<CostObject[]>('/objects/');
-      console.log('Загружены объекты:', data);
       setObjects(data);
     } catch (err) {
       console.error('Ошибка загрузки объектов:', err);
-      // alert('Ошибка загрузки списка объектов'); // Временно раскомментируйте для отладки
     }
   };
 
-  const openDistributeModal = async (id: number) => {
-    setSelectedUpdForDistribution(id);
-    setSelectedObjectId(null);
-    setDistributeModalOpen(true);
-
-    // Убедимся что детали загружены
-    if (!detailsCache[id]) {
-      try {
-        const detail = await apiClient.get<UPDDetailResponse>(`/material-costs/${id}`);
-        setDetailsCache(prev => ({ ...prev, [id]: detail }));
-      } catch (err) {
-        console.error('Ошибка загрузки деталей для распределения:', err);
-        alert('Не удалось загрузить данные документа');
-        setDistributeModalOpen(false);
-      }
-    }
-  };
-
-  const handleDistribute = async () => {
-    if (!selectedUpdForDistribution || !selectedObjectId) return;
-
-    const details = detailsCache[selectedUpdForDistribution];
-    if (!details) return;
-
-    // Формируем запрос на полное распределение (все строки на один объект)
-    const distributions = details.items.map(item => ({
-      material_cost_item_id: item.id,
-      cost_object_id: selectedObjectId,
-      distributed_quantity: item.quantity,
-      distributed_amount: item.amount
-    }));
-
+  const loadUPDs = async () => {
     try {
-      await apiClient.post(`/material-costs/${selectedUpdForDistribution}/distribute`, { distributions });
-      alert('УПД успешно распределен!');
-      setDistributeModalOpen(false);
-      loadUPDs(); // Обновляем список, чтобы сменился статус
+      const data = await updApi.getUnprocessed();
+      setUpds(data);
     } catch (err: any) {
-      console.error('Ошибка распределения:', err);
-      alert(err.response?.data?.detail || 'Ошибка при распределении');
+      setError('Ошибка загрузки УПД');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -86,28 +83,17 @@ export function UPDPage() {
 
     setExpandedRowId(id);
 
-    // Загружаем детали если их нет в кеше
     if (!detailsCache[id] && !detailsLoading[id]) {
       setDetailsLoading(prev => ({ ...prev, [id]: true }));
       try {
-        const detail = await apiClient.get<UPDDetailResponse>(`/material-costs/${id}`);
+        const detail = await updApi.getById(id);
+        // @ts-ignore
         setDetailsCache(prev => ({ ...prev, [id]: detail }));
       } catch (err) {
         console.error('Ошибка загрузки деталей:', err);
       } finally {
         setDetailsLoading(prev => ({ ...prev, [id]: false }));
       }
-    }
-  };
-
-  const loadUPDs = async () => {
-    try {
-      const data = await apiClient.get<UPDDocument[]>('/material-costs/unprocessed');
-      setUpds(data);
-    } catch (err: any) {
-      setError('Ошибка загрузки УПД');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -119,9 +105,8 @@ export function UPDPage() {
     setError('');
 
     try {
-      await apiClient.uploadFile('/material-costs/upload', file);
+      await updApi.upload(file);
       await loadUPDs();
-      alert('УПД успешно загружен!');
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Ошибка загрузки файла');
     } finally {
@@ -129,12 +114,115 @@ export function UPDPage() {
     }
   };
 
+  const openDistributeModal = async (id: number, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setSelectedUpdForDistribution(id);
+    setDistributeModalOpen(true);
+    setLoadingSuggestions(true);
+    setSuggestions([]);
+    setDistributionDraft({});
+
+    try {
+      const [detail, suggestionsData] = await Promise.all([
+        detailsCache[id] ? Promise.resolve(detailsCache[id]) : updApi.getById(id),
+        updApi.getSuggestions(id)
+      ]);
+
+      // @ts-ignore
+      if (!detailsCache[id]) setDetailsCache(prev => ({ ...prev, [id]: detail }));
+
+      setSuggestions(suggestionsData.suggestions);
+
+      const initialDraft: Record<number, number | null> = {};
+
+      suggestionsData.suggestions.forEach(s => {
+        if (s.suggested_cost_object_id) {
+          initialDraft[s.material_cost_item_id] = s.suggested_cost_object_id;
+        } else {
+          initialDraft[s.material_cost_item_id] = null;
+        }
+      });
+
+      detail.items.forEach(item => {
+        if (initialDraft[item.id] === undefined) {
+          initialDraft[item.id] = null;
+        }
+      });
+
+      setDistributionDraft(initialDraft);
+
+    } catch (err) {
+      console.error('Failed to load data for distribution:', err);
+      alert('Ошибка загрузки данных для распределения');
+      setDistributeModalOpen(false);
+    } finally {
+      setLoadingSuggestions(false);
+    }
+  };
+
+  const handleDraftChange = (itemId: number, objectId: number | null) => {
+    setDistributionDraft(prev => ({
+      ...prev,
+      [itemId]: objectId
+    }));
+  };
+
+  const applyBulkObject = (objectId: number | null) => {
+    if (!selectedUpdForDistribution) return;
+    const details = detailsCache[selectedUpdForDistribution];
+    if (!details) return;
+
+    const newDraft: Record<number, number | null> = {};
+    details.items.forEach(item => {
+      newDraft[item.id] = objectId;
+    });
+    setDistributionDraft(newDraft);
+  };
+
+  const handleDistributeConfirm = async () => {
+    if (!selectedUpdForDistribution) return;
+    const details = detailsCache[selectedUpdForDistribution];
+    if (!details) return;
+
+    const unassigned = details.items.filter(item => !distributionDraft[item.id]);
+    if (unassigned.length > 0) {
+      if (!window.confirm(`Не рапределено позиций: ${unassigned.length}.Продолжить ? `)) {
+        return;
+      }
+    }
+
+    const distributions = details.items
+      .filter(item => distributionDraft[item.id])
+      .map(item => ({
+        material_cost_item_id: item.id,
+        cost_object_id: distributionDraft[item.id]!,
+        distributed_quantity: item.quantity,
+        distributed_amount: item.total_with_vat // Using Total with VAT as amount
+      }));
+
+    if (distributions.length === 0) {
+      alert('Нет позиций для распределения');
+      return;
+    }
+
+    try {
+      await updApi.distribute(selectedUpdForDistribution, { distributions });
+      setDistributeModalOpen(false);
+      loadUPDs();
+    } catch (err: any) {
+      console.error('Ошибка распределения:', err);
+      alert(err.response?.data?.detail || 'Ошибка при распределении');
+    }
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'NEW': return '#3498db';
-      case 'DISTRIBUTED': return '#2ecc71';
-      case 'ARCHIVED': return '#95a5a6';
-      default: return '#7f8c8d';
+      case 'NEW': return 'bg-blue-100 text-blue-700 border-blue-200';
+      case 'DISTRIBUTED': return 'bg-green-100 text-green-700 border-green-200';
+      case 'ARCHIVED': return 'bg-gray-100 text-gray-600 border-gray-200';
+      case 'ERROR': return 'bg-red-100 text-red-700 border-red-200';
+      case 'DUPLICATE': return 'bg-orange-100 text-orange-700 border-orange-200';
+      default: return 'bg-gray-100 text-gray-500 border-gray-200';
     }
   };
 
@@ -143,243 +231,305 @@ export function UPDPage() {
       case 'NEW': return 'Новый';
       case 'DISTRIBUTED': return 'Распределен';
       case 'ARCHIVED': return 'Архив';
+      case 'ERROR': return 'Ошибка';
+      case 'DUPLICATE': return 'Дубликат';
       default: return status;
     }
   };
 
+  const getSuggestionForItem = (itemId: number) => {
+    return suggestions.find(s => s.material_cost_item_id === itemId);
+  };
+
   if (loading) {
-    return <div>Загрузка...</div>;
+    return (
+      <div className="flex justify-center items-center h-[50vh]">
+        <Loader2 className="animate-spin text-[var(--blue-ios)]" size={40} />
+      </div>
+    );
   }
 
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-        <h1 style={{ margin: 0 }}>УПД Документы</h1>
-        <label style={{
-          padding: '12px 24px',
-          backgroundColor: '#3498db',
-          color: 'white',
-          borderRadius: '6px',
-          cursor: uploading ? 'not-allowed' : 'pointer',
-          opacity: uploading ? 0.6 : 1
-        }}>
-          {uploading ? 'Загрузка...' : 'Загрузить XML'}
-          <input
-            type="file"
-            accept=".xml"
-            onChange={handleFileUpload}
-            disabled={uploading}
-            style={{ display: 'none' }}
-          />
+    <div className="space-y-6 animate-fade-in pb-20">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-[var(--text-primary)] tracking-tight">УПД Документы</h1>
+          <p className="text-[var(--text-secondary)]">Обработка и распределение поступлений</p>
+        </div>
+        <label className={`
+          flex items-center gap-2 bg-[var(--blue-ios)] text-white px-5 py-2.5 rounded-xl font-medium 
+          active:scale-95 transition-transform shadow-sm hover:shadow-md cursor-pointer
+          ${uploading ? 'opacity-70 cursor-wait' : ''}
+        `}>
+          {uploading ? <Loader2 className="animate-spin" size={20} /> : <Upload size={20} />}
+          <span>{uploading ? 'Загрузка...' : 'Загрузить XML'}</span>
+          <input type="file" accept=".xml" onChange={handleFileUpload} disabled={uploading} className="hidden" />
         </label>
       </div>
 
       {error && (
-        <div style={{
-          padding: '12px',
-          backgroundColor: '#fee',
-          color: '#c33',
-          borderRadius: '6px',
-          marginBottom: '20px'
-        }}>
+        <div className="bg-red-50 border border-red-100 text-red-600 p-4 rounded-xl flex items-center gap-3">
+          <AlertCircle size={20} />
           {error}
         </div>
       )}
 
       {upds.length === 0 ? (
-        <div style={{
-          backgroundColor: 'white',
-          padding: '40px',
-          borderRadius: '8px',
-          textAlign: 'center',
-          color: '#7f8c8d'
-        }}>
-          Нет необработанных УПД. Загрузите XML файл для начала работы.
+        <div className="bg-[var(--bg-card)] p-10 rounded-2xl border border-[var(--separator)] text-center text-[var(--text-secondary)]">
+          <div className="bg-slate-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+            <FileText size={32} className="text-slate-400" />
+          </div>
+          <h3 className="text-lg font-medium text-[var(--text-primary)]">Нет документов</h3>
+          <p>Загрузите первый XML файл УПД для начала работы</p>
         </div>
       ) : (
-        <div style={{ backgroundColor: 'white', borderRadius: '8px', overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
-            <thead>
-              <tr style={{ backgroundColor: '#f8f9fa', borderBottom: '2px solid #dee2e6' }}>
-                <th style={{ width: '40px' }}></th>
-                <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600' }}>Номер</th>
-                <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600' }}>Дата</th>
-                <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600' }}>Поставщик</th>
-                <th style={{ padding: '12px', textAlign: 'right', fontWeight: '600' }}>Сумма</th>
-                <th style={{ padding: '12px', textAlign: 'center', fontWeight: '600' }}>Позиций</th>
-                <th style={{ padding: '12px', textAlign: 'center', fontWeight: '600' }}>Статус</th>
-                <th style={{ padding: '12px', textAlign: 'center', fontWeight: '600' }}>Действия</th>
-              </tr>
-            </thead>
-            <tbody>
-              {upds.map(upd => (
-                <React.Fragment key={upd.id}>
-                  <tr
-                    style={{ borderBottom: '1px solid #dee2e6', cursor: 'pointer', backgroundColor: expandedRowId === upd.id ? '#f0f7ff' : 'transparent' }}
-                    onClick={() => toggleRow(upd.id)}
-                  >
-                    <td style={{ padding: '12px', textAlign: 'center' }}>
-                      {expandedRowId === upd.id ? '▼' : '▶'}
-                    </td>
-                    <td style={{ padding: '12px' }}>{upd.document_number}</td>
-                    <td style={{ padding: '12px' }}>{new Date(upd.document_date).toLocaleDateString('ru')}</td>
-                    <td style={{ padding: '12px' }}>{upd.supplier_name}</td>
-                    <td style={{ padding: '12px', textAlign: 'right', fontWeight: '600' }}>
-                      {upd.total_with_vat.toLocaleString('ru')} ₽
-                    </td>
-                    <td style={{ padding: '12px', textAlign: 'center' }}>{upd.items_count}</td>
-                    <td style={{ padding: '12px', textAlign: 'center' }}>
-                      <span style={{
-                        padding: '4px 12px',
-                        borderRadius: '12px',
-                        fontSize: '12px',
-                        fontWeight: '500',
-                        backgroundColor: getStatusColor(upd.status) + '20',
-                        color: getStatusColor(upd.status)
-                      }}>
-                        {getStatusText(upd.status)}
-                      </span>
-                    </td>
-                    <td style={{ padding: '12px', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
-                      <button
-                        onClick={() => openDistributeModal(upd.id)}
-                        disabled={upd.status !== 'NEW'}
-                        style={{
-                          padding: '6px 12px',
-                          backgroundColor: upd.status === 'NEW' ? '#3498db' : '#ccc',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '4px',
-                          cursor: upd.status === 'NEW' ? 'pointer' : 'not-allowed',
-                          fontSize: '12px'
-                        }}
-                      >
-                        Распределить
-                      </button>
-                    </td>
-                  </tr>
-                  {expandedRowId === upd.id && (
-                    <tr style={{ backgroundColor: '#f8f9fa' }}>
-                      <td colSpan={8} style={{ padding: '20px' }}>
-                        {detailsLoading[upd.id] ? (
-                          <div style={{ textAlign: 'center', color: '#666' }}>Загрузка деталей...</div>
-                        ) : detailsCache[upd.id]?.items ? (
-                          <div style={{
-                            backgroundColor: 'white',
-                            padding: '16px',
-                            borderRadius: '8px',
-                            boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
-                          }}>
-                            <h4 style={{ margin: '0 0 12px 0', color: '#333' }}>Товары и услуги</h4>
-                            <table style={{ width: '100%', fontSize: '14px', borderCollapse: 'collapse' }}>
-                              <thead>
-                                <tr style={{ borderBottom: '1px solid #eee', color: '#666' }}>
-                                  <th style={{ textAlign: 'left', padding: '8px' }}>Наименование</th>
-                                  <th style={{ textAlign: 'right', padding: '8px', width: '80px' }}>Кол-во</th>
-                                  <th style={{ textAlign: 'center', padding: '8px', width: '60px' }}>Ед.</th>
-                                  <th style={{ textAlign: 'right', padding: '8px', width: '100px' }}>Цена</th>
-                                  <th style={{ textAlign: 'right', padding: '8px', width: '100px' }}>НДС</th>
-                                  <th style={{ textAlign: 'right', padding: '8px', width: '120px' }}>Сумма</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {detailsCache[upd.id].items.map((item, idx) => (
-                                  <tr key={idx} style={{ borderBottom: '1px solid #f5f5f5' }}>
-                                    <td style={{ padding: '8px', color: '#333' }}>{item.product_name}</td>
-                                    <td style={{ padding: '8px', textAlign: 'right' }}>{item.quantity}</td>
-                                    <td style={{ padding: '8px', textAlign: 'center', color: '#666' }}>{item.unit}</td>
-                                    <td style={{ padding: '8px', textAlign: 'right' }}>{item.price.toLocaleString('ru')}</td>
-                                    <td style={{ padding: '8px', textAlign: 'right', color: '#666' }}>{item.vat_amount.toLocaleString('ru')}</td>
-                                    <td style={{ padding: '8px', textAlign: 'right', fontWeight: '500' }}>
-                                      {item.total_with_vat.toLocaleString('ru')}
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        ) : (
-                          <div style={{ textAlign: 'center', color: '#c33' }}>Не удалось загрузить детали</div>
-                        )}
+        <div className="bg-[var(--bg-card)] rounded-2xl shadow-sm border border-[var(--separator)] overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-[var(--bg-ios)] border-b border-[var(--separator-opaque)] text-[var(--text-secondary)] text-sm font-semibold">
+                  <th className="p-4 w-12 text-center"></th>
+                  <th className="p-4">Документ</th>
+                  <th className="p-4">Поставщик</th>
+                  <th className="p-4 text-right">Сумма</th>
+                  <th className="p-4 text-center">Позиций</th>
+                  <th className="p-4 text-center">Статус</th>
+                  <th className="p-4 text-center">Действия</th>
+                </tr>
+              </thead>
+              <tbody>
+                {upds.map(upd => (
+                  <React.Fragment key={upd.id}>
+                    <tr
+                      onClick={() => toggleRow(upd.id)}
+                      className={`
+                        border-b border-[var(--separator-opaque)] cursor-pointer transition-colors
+                        ${expandedRowId === upd.id ? 'bg-blue-50/50' : 'hover:bg-[var(--bg-ios)]'}
+                      `}
+                    >
+                      <td className="p-4 text-center text-[var(--text-secondary)]">
+                        {expandedRowId === upd.id ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                      </td>
+                      <td className="p-4">
+                        <div className="font-medium text-[var(--text-primary)]">№ {upd.document_number}</div>
+                        <div className="text-xs text-[var(--text-secondary)]">{new Date(upd.document_date).toLocaleDateString('ru')}</div>
+                      </td>
+                      <td className="p-4 text-[var(--text-primary)]">{upd.supplier_name}</td>
+                      <td className="p-4 text-right font-bold text-[var(--text-primary)] whitespace-nowrap">
+                        {upd.total_with_vat.toLocaleString('ru')} ₽
+                      </td>
+                      <td className="p-4 text-center text-[var(--text-secondary)]">{upd.items_count}</td>
+                      <td className="p-4 text-center">
+                        <span className={`px-3 py-1 rounded-full text-xs font-bold border ${getStatusColor(upd.status)} inline-block`}>
+                          {getStatusText(upd.status)}
+                        </span>
+                      </td>
+                      <td className="p-4 text-center">
+                        <button
+                          onClick={(e) => openDistributeModal(upd.id, e)}
+                          disabled={upd.status !== 'NEW'}
+                          className={`
+                            p-2 rounded-lg transition-colors
+                            ${upd.status === 'NEW'
+                              ? 'bg-[var(--blue-ios)] text-white hover:bg-blue-600'
+                              : 'bg-gray-100 text-gray-400 cursor-not-allowed'}
+                          `}
+                          title="Распределить"
+                        >
+                          <Split size={18} />
+                        </button>
                       </td>
                     </tr>
-                  )}
-                </React.Fragment>
-              ))}
-            </tbody>
-          </table>
+
+                    {/* Expanded Details */}
+                    {expandedRowId === upd.id && (
+                      <tr className="bg-[var(--bg-ios)]">
+                        <td colSpan={7} className="p-4 lg:p-6">
+                          {detailsLoading[upd.id] ? (
+                            <div className="flex justify-center p-4">
+                              <Loader2 className="animate-spin text-[var(--text-secondary)]" />
+                            </div>
+                          ) : detailsCache[upd.id]?.items ? (
+                            <div className="bg-white rounded-xl border border-[var(--separator)] overflow-hidden shadow-sm">
+                              <div className="p-3 border-b border-[var(--separator)] bg-gray-50 font-medium text-[var(--text-secondary)] text-sm flex gap-2 items-center">
+                                <Box size={16} /> Товары и услуги по документу
+                              </div>
+                              <table className="w-full text-sm">
+                                <thead>
+                                  <tr className="text-[var(--text-secondary)] border-b border-[var(--separator-opaque)]">
+                                    <th className="p-3 text-left">Наименование</th>
+                                    <th className="p-3 text-right">Кол-во</th>
+                                    <th className="p-3 text-center">Ед.</th>
+                                    <th className="p-3 text-right">Цена</th>
+                                    <th className="p-3 text-right">Сумма</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-[var(--separator-opaque)]">
+                                  {detailsCache[upd.id].items.map((item, idx) => (
+                                    <tr key={idx} className="hover:bg-gray-50">
+                                      <td className="p-3 text-[var(--text-primary)] max-w-md truncate" title={item.product_name}>{item.product_name}</td>
+                                      <td className="p-3 text-right">{item.quantity}</td>
+                                      <td className="p-3 text-center text-[var(--text-secondary)]">{item.unit}</td>
+                                      <td className="p-3 text-right">{item.price.toLocaleString('ru')}</td>
+                                      <td className="p-3 text-right font-medium">{item.total_with_vat.toLocaleString('ru')}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          ) : (
+                            <div className="text-center text-red-500">Не удалось загрузить детали</div>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
+      {/* Smart Distribution Modal */}
       {distributeModalOpen && selectedUpdForDistribution && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.5)',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          zIndex: 1000
-        }}>
-          <div style={{
-            backgroundColor: 'white',
-            padding: '24px',
-            borderRadius: '8px',
-            width: '500px',
-            maxWidth: '90%'
-          }}>
-            <h2 style={{ marginTop: 0 }}>Распределение УПД</h2>
-            <p>Выберите объект для привязки всех затрат из документа:</p>
-
-            <select
-              value={selectedObjectId || ''}
-              onChange={e => setSelectedObjectId(Number(e.target.value))}
-              style={{
-                width: '100%',
-                padding: '8px',
-                marginBottom: '20px',
-                borderRadius: '4px',
-                border: '1px solid #ddd'
-              }}
-            >
-              <option value="">-- Выберите объект ({objects.length}) --</option>
-              {objects.map(obj => (
-                <option key={obj.id} value={obj.id}>{obj.name} ({obj.code})</option>
-              ))}
-            </select>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-              <button
-                onClick={() => setDistributeModalOpen(false)}
-                style={{
-                  padding: '8px 16px',
-                  backgroundColor: '#f8f9fa',
-                  border: '1px solid #ddd',
-                  borderRadius: '4px',
-                  cursor: 'pointer'
-                }}
-              >
-                Отмена
-              </button>
-              <button
-                onClick={handleDistribute}
-                disabled={!selectedObjectId}
-                style={{
-                  padding: '8px 16px',
-                  backgroundColor: selectedObjectId ? '#2ecc71' : '#ccc',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: selectedObjectId ? 'pointer' : 'not-allowed'
-                }}
-              >
-                Подтвердить
-              </button>
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="bg-[var(--bg-card)] rounded-2xl shadow-2xl max-w-5xl w-full h-[85vh] flex flex-col overflow-hidden border border-[var(--separator)]"
+          >
+            {/* Modal Header */}
+            <div className="flex justify-between items-center p-6 border-b border-[var(--separator)] bg-[var(--bg-card)] shrink-0">
+              <div>
+                <h2 className="text-xl font-bold text-[var(--text-primary)]">Распределение документа</h2>
+                <div className="text-sm text-[var(--text-secondary)] mt-1">
+                  УПД № {upds.find(u => u.id === selectedUpdForDistribution)?.document_number} от {new Date(upds.find(u => u.id === selectedUpdForDistribution)?.document_date || '').toLocaleDateString('ru')}
+                </div>
+              </div>
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2 bg-[var(--bg-ios)] px-3 py-1.5 rounded-lg border border-[var(--separator-opaque)]">
+                  <span className="text-xs text-[var(--text-secondary)]">Для всех:</span>
+                  <select
+                    onChange={(e) => applyBulkObject(e.target.value ? Number(e.target.value) : null)}
+                    className="bg-transparent text-sm font-medium outline-none text-[var(--text-primary)]"
+                  >
+                    <option value="">-- Выбрать --</option>
+                    {objects.map(obj => (
+                      <option key={obj.id} value={obj.id}>{obj.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <button onClick={() => setDistributeModalOpen(false)} className="p-2 hover:bg-[var(--bg-ios)] rounded-full transition-colors">
+                  <X size={24} className="text-[var(--text-secondary)]" />
+                </button>
+              </div>
             </div>
-          </div>
+
+            {/* Modal Body */}
+            <div className="flex-1 overflow-y-auto bg-gray-50 p-6">
+              {loadingSuggestions ? (
+                <div className="h-full flex flex-col items-center justify-center text-[var(--text-secondary)]">
+                  <Loader2 className="animate-spin mb-4 text-[var(--blue-ios)]" size={40} />
+                  <p>Анализируем номенклатуру и ищем соответствия...</p>
+                </div>
+              ) : detailsCache[selectedUpdForDistribution] ? (
+                <div className="bg-white rounded-xl shadow-sm border border-[var(--separator)] overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 border-b border-[var(--separator)] sticky top-0 z-10">
+                      <tr>
+                        <th className="p-4 text-left text-[var(--text-secondary)] font-semibold">Позиция</th>
+                        <th className="p-4 text-right text-[var(--text-secondary)] font-semibold w-24">Кол-во</th>
+                        <th className="p-4 text-right text-[var(--text-secondary)] font-semibold w-32">Сумма</th>
+                        <th className="p-4 text-left text-[var(--text-secondary)] font-semibold w-[350px]">Объект затрат</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[var(--separator-opaque)]">
+                      {detailsCache[selectedUpdForDistribution].items.map(item => {
+                        const suggestion = getSuggestionForItem(item.id);
+                        const currentObjectId = distributionDraft[item.id];
+                        // Helper to check if distribution is valid
+                        const isValid = (d: any) => d.cost_object_id === currentObjectId && currentObjectId !== null;
+
+                        return (
+                          <tr key={item.id} className="hover:bg-blue-50/30 transition-colors">
+                            <td className="p-4">
+                              <div className="font-medium text-[var(--text-primary)] mb-1">{item.product_name}</div>
+                              {suggestion && suggestion.confidence > 0 && (
+                                <div className="flex items-center gap-2 mt-1">
+                                  <span className={`
+                                      text-[10px] px-2 py-0.5 rounded border flex items-center gap-1
+                                      ${suggestion.confidence > 80
+                                      ? 'bg-green-50 text-green-700 border-green-200'
+                                      : 'bg-yellow-50 text-yellow-700 border-yellow-200'}
+                                    `}>
+                                    AI Match: {Math.round(suggestion.confidence)}%
+                                  </span>
+                                </div>
+                              )}
+                            </td>
+                            <td className="p-4 text-right align-top pt-5">{item.quantity} {item.unit}</td>
+                            <td className="p-4 text-right font-medium align-top pt-5">{item.total_with_vat.toLocaleString('ru')} ₽</td>
+                            <td className="p-4 align-top">
+                              <div className="relative">
+                                <select
+                                  value={currentObjectId || ''}
+                                  onChange={e => handleDraftChange(item.id, e.target.value ? Number(e.target.value) : null)}
+                                  className={`
+                                      w-full p-2.5 rounded-lg border outline-none appearance-none cursor-pointer transition-shadow
+                                      ${currentObjectId
+                                      ? 'bg-blue-50 border-blue-200 text-blue-900 font-medium'
+                                      : 'bg-white border-[var(--separator)] text-[var(--text-secondary)]'}
+                                      focus:ring-2 focus:ring-[var(--blue-ios)]
+                                    `}
+                                >
+                                  <option value="">-- Не выбрано --</option>
+                                  {objects.map(obj => (
+                                    <option key={obj.id} value={obj.id}>{obj.name}</option>
+                                  ))}
+                                </select>
+                                <ChevronDown className="absolute right-3 top-3 text-[var(--text-secondary)] pointer-events-none" size={16} />
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="text-center text-red-500 py-10">Ошибка загрузки данных распределения</div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-6 border-t border-[var(--separator)] bg-[var(--bg-card)] flex justify-between items-center shrink-0">
+              <div className="text-sm text-[var(--text-secondary)]">
+                Распределено: <span className="font-bold text-[var(--text-primary)]">
+                  {Object.values(distributionDraft).filter(v => v !== null).length}
+                </span> из <span>
+                  {detailsCache[selectedUpdForDistribution]?.items.length || 0}
+                </span>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setDistributeModalOpen(false)}
+                  className="px-6 py-3 rounded-xl font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-ios)] transition-colors"
+                >
+                  Отмена
+                </button>
+                <button
+                  onClick={handleDistributeConfirm}
+                  className="px-6 py-3 rounded-xl font-bold text-white bg-[var(--blue-ios)] active:scale-95 transition-all shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={Object.values(distributionDraft).filter(v => v !== null).length === 0}
+                >
+                  Подтвердить и сохранить
+                </button>
+              </div>
+            </div>
+
+          </motion.div>
         </div>
       )}
     </div>

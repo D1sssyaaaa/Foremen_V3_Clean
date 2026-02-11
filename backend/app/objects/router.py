@@ -1328,7 +1328,7 @@ async def get_object_costs(
             TimeSheetItem.id,
             TimeSheetItem.date,
             TimeSheetItem.hours,
-            TimeSheet.hour_rate,
+            TimeSheetItem.hour_rate,
             TimeSheet.period_start,
             TimeSheet.period_end
         )

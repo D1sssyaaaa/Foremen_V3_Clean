@@ -18,69 +18,68 @@ async def reproduce_login():
     async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     
     async with async_session() as session:
-        # 1. Check if user 'admin' exists or list users
+        # 1. List users
         print("Checking users...")
         result = await session.execute(select(User))
         users = result.scalars().all()
-        print(f"Found {len(users)} users.")
         
         if not users:
             print("No users found!")
             return
 
-        # Try to find a user to "login" as.
-        # We can't know the password, but we can test the critical parts that crash:
-        # 1. DB Fetch (done above)
-        # 2. Role parsing
-        # 3. Token generation
+        print(f"Found {len(users)} users. Testing each one...")
         
-        test_user = users[0]
-        print(f"Testing with user: {test_user.username}")
-        
-        try:
-            # 2. Role parsing logic from router.py
-            print(f"Raw roles: {test_user.roles} (type: {type(test_user.roles)})")
+        for test_user in users:
+            print(f"\n--- Testing user: {test_user.username} (ID: {test_user.id}) ---")
             
-            roles = []
             try:
-                if isinstance(test_user.roles, list):
-                    roles = test_user.roles
-                elif isinstance(test_user.roles, str):
-                    roles = json.loads(test_user.roles)
-                else:
-                    roles = []
-                print(f"Parsed roles: {roles}")
-            except Exception as e:
-                print(f"Role parsing FAILED: {e}")
-                raise
+                # 2. Role parsing logic from router.py
+                print(f"Raw roles: {test_user.roles} (type: {type(test_user.roles)})")
+                
+                roles = []
+                try:
+                    if isinstance(test_user.roles, list):
+                        roles = test_user.roles
+                    elif isinstance(test_user.roles, str):
+                        roles = json.loads(test_user.roles)
+                    else:
+                        roles = []
+                    print(f"Parsed roles: {roles}")
+                except Exception as e:
+                    print(f"❌ Role parsing FAILED: {e}")
+                    # This might cause 500 in app!
+                    continue
+                
+                # 3. Token generation logic
+                user_id_str = str(test_user.id)
+                
+                try:
+                    access_token = create_access_token(data={"sub": user_id_str, "roles": roles})
+                except Exception as e:
+                    print(f"❌ create_access_token FAILED: {e}")
+                    continue
 
-            # 3. Token generation logic
-            user_id_str = str(test_user.id)
-            print(f"Creating tokens for user_id: {user_id_str}")
-            
-            try:
-                access_token = create_access_token(data={"sub": user_id_str, "roles": roles})
-                print(f"Access token created: {access_token[:10]}...")
+                try:
+                    refresh_token = create_refresh_token(data={"sub": user_id_str})
+                except Exception as e:
+                    print(f"❌ create_refresh_token FAILED: {e}")
+                    continue
+                    
+                print(f"✅ Token generation OK")
+
+                # Test verify_password (dummy)
+                try:
+                    verify_password("dummy", test_user.hashed_password)
+                    print(f"✅ verify_password execution OK")
+                except Exception as e:
+                    print(f"❌ verify_password CRASHED: {e}")
+
             except Exception as e:
-                print(f"create_access_token FAILED: {e}")
-                # Analyze why
+                print(f"❌ User processing CRASHED: {e}")
                 import traceback
                 traceback.print_exc()
-                raise
 
-            try:
-                refresh_token = create_refresh_token(data={"sub": user_id_str})
-                print(f"Refresh token created: {refresh_token[:10]}...")
-            except Exception as e:
-                print(f"create_refresh_token FAILED: {e}")
-                raise
-                
-            print("Login reproduction steps COMPLETED successfully (excluding password check).")
-
-        except Exception as e:
-            print(f"Login Logic CRASHED: {e}")
-            import traceback
-            traceback.print_exc()
+        print("\nAll users processed.")
 
 if __name__ == "__main__":
     import os

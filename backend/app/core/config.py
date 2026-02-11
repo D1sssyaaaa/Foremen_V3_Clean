@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     telegram_webhook_url: str = ""
     telegram_admin_ids: str = ""
     api_base_url: str = "http://localhost:8000/api/v1"
-    miniapp_url: str = "http://localhost:5173" # Default dev URL
+    miniapp_url: str = "http://localhost:3000" # Default dev URL
 
     
     # CORS

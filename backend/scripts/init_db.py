@@ -13,6 +13,8 @@ from sqlalchemy import text
 from app.core.database import engine, Base
 from app.core.models_base import *  # Импорт всех моделей
 from app.models import *  # Импортируем все модели включая AuditLog
+from app.auth.models_rbac import *  # RBAC: Role, Permission, RolePermission, UserRoleLink
+from app.materials.models_mapping import *  # ProductAlias для обучения маппинга
 from app.core.config import settings
 
 

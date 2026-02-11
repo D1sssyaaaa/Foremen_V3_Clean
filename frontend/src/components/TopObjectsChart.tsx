@@ -38,9 +38,9 @@ export function TopObjectsChart() {
 
   if (error) {
     return (
-      <div style={{ 
-        textAlign: 'center', 
-        padding: '40px', 
+      <div style={{
+        textAlign: 'center',
+        padding: '40px',
         color: '#e74c3c',
         backgroundColor: '#fee',
         borderRadius: '8px',
@@ -64,25 +64,25 @@ export function TopObjectsChart() {
       <ResponsiveContainer>
         <BarChart data={data} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" />
-          <XAxis 
-            dataKey="name" 
+          <XAxis
+            dataKey="name"
             angle={-15}
             textAnchor="end"
             height={80}
             style={{ fontSize: '12px' }}
           />
-          <YAxis 
+          <YAxis
             label={{ value: 'Сумма доставок (₽)', angle: -90, position: 'insideLeft' }}
             style={{ fontSize: '12px' }}
           />
-          <Tooltip 
-            formatter={(value: number) => [`${value.toLocaleString('ru')} ₽`, 'Доставки']}
+          <Tooltip
+            formatter={(value: any) => [`${value.toLocaleString('ru')} ₽`, 'Доставки']}
             labelStyle={{ color: '#2c3e50' }}
           />
           <Legend />
-          <Bar 
-            dataKey="deliveries" 
-            fill="#3498db" 
+          <Bar
+            dataKey="deliveries"
+            fill="#3498db"
             name="Доставки материалов"
             radius={[8, 8, 0, 0]}
           />

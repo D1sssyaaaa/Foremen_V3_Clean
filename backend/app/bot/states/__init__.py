@@ -44,6 +44,13 @@ class EquipmentOrderStates(StatesGroup):
     # Отмена заявки
     cancel_reason = State()  # Ввод причины отмены
 
+    # Менеджер
+    manager_reject_reason = State()
+    
+    # Ввод часов (Прораб)
+    input_hours = State()
+    input_hours_description = State()
+
 
 
 

@@ -1,6 +1,21 @@
+
 import { useState, useEffect } from 'react';
 import { apiClient } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  Truck,
+  Calendar,
+  MapPin,
+  User,
+  CheckCircle2,
+  AlertCircle,
+  Plus,
+  X,
+  CreditCard,
+  DollarSign,
+  Info
+} from 'lucide-react';
 
 interface EquipmentOrder {
   id: number;
@@ -24,7 +39,6 @@ interface EquipmentOrder {
   updated_at?: string;
 }
 
-// Все статусы с метками (используем русские значения как в backend)
 const ALL_STATUSES = [
   { value: 'all', label: 'Все' },
   { value: 'НОВАЯ', label: 'Новая' },
@@ -35,7 +49,6 @@ const ALL_STATUSES = [
   { value: 'ОТМЕНЕНА', label: 'Отменена' },
 ];
 
-// Перевод типов техники на русский
 const equipmentTypeLabels: Record<string, string> = {
   'excavator': 'Экскаватор',
   'crane': 'Кран',
@@ -87,24 +100,20 @@ export function EquipmentOrdersPage() {
   };
 
   const getStatusColor = (status: string) => {
-    const colors: Record<string, string> = {
-      'НОВАЯ': '#3498db',
-      'УТВЕРЖДЕНА': '#2ecc71',
-      'В РАБОТЕ': '#f39c12',
-      'ЗАВЕРШЕНА': '#27ae60',
-      'ОТМЕНЕНА': '#95a5a6',
-      'ОТМЕНА ЗАПРОШЕНА': '#e67e22',
-      'ОТКЛОНЕНА': '#e74c3c',
-    };
-    return colors[status] || '#7f8c8d';
+    switch (status) {
+      case 'НОВАЯ': return 'bg-blue-100 text-blue-700 border-blue-200';
+      case 'УТВЕРЖДЕНА': return 'bg-green-100 text-green-700 border-green-200';
+      case 'В РАБОТЕ': return 'bg-orange-100 text-orange-700 border-orange-200';
+      case 'ЗАВЕРШЕНА': return 'bg-emerald-100 text-emerald-700 border-emerald-200';
+      case 'ОТМЕНЕНА': return 'bg-gray-100 text-gray-600 border-gray-200';
+      case 'ОТМЕНА ЗАПРОШЕНА': return 'bg-red-100 text-red-700 border-red-200';
+      case 'ОТКЛОНЕНА': return 'bg-red-100 text-red-700 border-red-200';
+      default: return 'bg-gray-100 text-gray-500 border-gray-200';
+    }
   };
 
-  const getStatusText = (status: string) => {
-    // Backend уже возвращает русские статусы
-    return status;
-  };
+  const getStatusText = (status: string) => status;
 
-  // Перевод типа техники
   const getEquipmentTypeText = (type: string) => {
     return equipmentTypeLabels[type.toLowerCase()] || equipmentTypeLabels[type] || type;
   };
@@ -121,7 +130,7 @@ export function EquipmentOrdersPage() {
 
   const handleSetCost = async () => {
     if (!costOrder || !hourRate) return;
-    
+
     try {
       await apiClient.put(`/equipment-orders/${costOrder.id}/cost`, {
         hour_rate: parseFloat(hourRate)
@@ -147,10 +156,9 @@ export function EquipmentOrdersPage() {
     return Math.ceil(diff / (1000 * 60 * 60 * 24)) + 1;
   };
 
-  // Проверка прав на управление заявками
   const canManageOrders = () => {
     if (!user) return false;
-    return user.roles.some(role => 
+    return user.roles.some(role =>
       ['ADMIN', 'MANAGER', 'EQUIPMENT_MANAGER'].includes(role)
     );
   };
@@ -160,7 +168,6 @@ export function EquipmentOrdersPage() {
     return order.status === filter;
   });
 
-  // Подсчёт заявок по статусам
   const statusCounts = ALL_STATUSES.reduce((acc, status) => {
     if (status.value === 'all') {
       acc[status.value] = orders.length;
@@ -171,54 +178,49 @@ export function EquipmentOrdersPage() {
   }, {} as Record<string, number>);
 
   if (loading) {
-    return <div style={{ padding: '40px', textAlign: 'center' }}>Загрузка...</div>;
+    return (
+      <div className="flex justify-center items-center h-[50vh]">
+        <div className="animate-spin text-[var(--blue-ios)]">
+          <Truck size={40} />
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-        <h1 style={{ margin: 0 }}>🚜 Аренда техники и инструмента</h1>
-        <button 
+    <div className="space-y-6 animate-fade-in pb-20">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-[var(--text-primary)] tracking-tight">Аренда техники</h1>
+          <p className="text-[var(--text-secondary)]">Управление спецтехникой и инструменты</p>
+        </div>
+        <button
           onClick={() => alert('Используйте Telegram Bot для создания заявок на технику!')}
-          style={{
-            padding: '12px 24px',
-            backgroundColor: '#f39c12',
-            color: 'white',
-            border: 'none',
-            borderRadius: '6px',
-            cursor: 'pointer'
-          }}
+          className="flex items-center gap-2 bg-[var(--blue-ios)] text-white px-5 py-2.5 rounded-xl font-medium active:scale-95 transition-transform shadow-sm hover:shadow-md"
         >
-          + Создать заявку
+          <Plus size={20} />
+          <span>Создать заявку</span>
         </button>
       </div>
 
-      {/* Вкладки статусов */}
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap' }}>
+      {/* Filter Tabs */}
+      <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 sm:mx-0 sm:px-0 no-scrollbar">
         {ALL_STATUSES.map(status => (
           <button
             key={status.value}
             onClick={() => setFilter(status.value)}
-            style={{
-              padding: '10px 16px',
-              backgroundColor: filter === status.value ? '#f39c12' : '#ecf0f1',
-              color: filter === status.value ? 'white' : '#2c3e50',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontSize: '14px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px'
-            }}
+            className={`
+              flex items-center gap-2 px-4 py-2 rounded-xl whitespace-nowrap transition-colors font-medium text-sm
+              ${filter === status.value
+                ? 'bg-[var(--blue-ios)] text-white shadow-md'
+                : 'bg-[var(--bg-card)] text-[var(--text-secondary)] border border-[var(--separator)] hover:bg-[var(--bg-ios)]'}
+            `}
           >
             {status.label}
-            <span style={{
-              backgroundColor: filter === status.value ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.1)',
-              padding: '2px 8px',
-              borderRadius: '10px',
-              fontSize: '12px'
-            }}>
+            <span className={`
+              px-2 py-0.5 rounded-md text-xs font-bold
+              ${filter === status.value ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500'}
+            `}>
               {statusCounts[status.value] || 0}
             </span>
           </button>
@@ -226,405 +228,241 @@ export function EquipmentOrdersPage() {
       </div>
 
       {filteredOrders.length === 0 ? (
-        <div style={{ 
-          backgroundColor: 'white', 
-          padding: '40px', 
-          borderRadius: '8px',
-          textAlign: 'center',
-          color: '#7f8c8d'
-        }}>
-          Заявки не найдены
+        <div className="bg-[var(--bg-card)] p-10 rounded-2xl border border-[var(--separator)] text-center text-[var(--text-secondary)]">
+          <div className="bg-yellow-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Truck size={32} className="text-yellow-500" />
+          </div>
+          <h3 className="text-lg font-medium text-[var(--text-primary)]">Заявки не найдены</h3>
+          <p>Нет заявок с выбранным статусом</p>
         </div>
       ) : (
-        <div style={{ display: 'grid', gap: '15px' }}>
-          {filteredOrders.map(order => (
-            <div
-              key={order.id}
-              style={{
-                backgroundColor: 'white',
-                padding: '20px',
-                borderRadius: '8px',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                borderLeft: `4px solid ${getStatusColor(order.status)}`
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '15px' }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px', flexWrap: 'wrap' }}>
-                    <h3 style={{ margin: 0, color: '#2c3e50' }}>Заявка #{order.id}</h3>
-                    <span style={{
-                      padding: '4px 12px',
-                      borderRadius: '12px',
-                      fontSize: '12px',
-                      fontWeight: '500',
-                      backgroundColor: getStatusColor(order.status) + '20',
-                      color: getStatusColor(order.status)
-                    }}>
-                      {getStatusText(order.status)}
-                    </span>
+        <div className="grid grid-cols-1 gap-4">
+          <AnimatePresence>
+            {filteredOrders.map(order => (
+              <motion.div
+                key={order.id}
+                layout
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="bg-[var(--bg-card)] rounded-2xl p-5 shadow-sm border border-[var(--separator)] hover:shadow-md transition-shadow relative overflow-hidden"
+              >
+                <div className={`absolute left-0 top-0 bottom-0 w-1.5 ${getStatusColor(order.status).split(' ')[0]}`} />
+
+                <div className="flex flex-col md:flex-row justify-between gap-4">
+                  <div className="flex-1 pl-3">
+                    <div className="flex items-center gap-3 mb-2 flex-wrap">
+                      <h3 className="text-lg font-bold text-[var(--text-primary)]">Заявка #{order.id}</h3>
+                      <span className={`px-3 py-1 rounded-full text-xs font-bold border ${getStatusColor(order.status)}`}>
+                        {getStatusText(order.status)}
+                      </span>
+                    </div>
+
+                    <div className="text-sm text-[var(--text-secondary)] flex flex-wrap gap-x-4 gap-y-1 mb-4">
+                      <div className="flex items-center gap-1.5">
+                        <MapPin size={14} />
+                        <span className="font-medium text-[var(--text-primary)]">{order.cost_object_name || `Объект ${order.cost_object_id}`}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <User size={14} />
+                        <span>{order.foreman_name || `Бригадир ${order.foreman_id}`}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <Calendar size={14} />
+                        <span>{new Date(order.created_at).toLocaleDateString('ru')}</span>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 bg-[var(--bg-ios)] p-4 rounded-xl">
+                      <div>
+                        <div className="text-xs text-[var(--text-secondary)] mb-1">Техника</div>
+                        <div className="font-semibold text-[var(--text-primary)] flex items-center gap-1.5">
+                          <Truck size={14} className="text-orange-500" />
+                          {getEquipmentTypeText(order.equipment_type)}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-[var(--text-secondary)] mb-1">Количество</div>
+                        <div className="font-semibold text-[var(--text-primary)]">{order.quantity} ед.</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-[var(--text-secondary)] mb-1">Период</div>
+                        <div className="font-semibold text-[var(--text-primary)] text-xs sm:text-sm">
+                          {new Date(order.start_date).toLocaleDateString('ru')} - {new Date(order.end_date).toLocaleDateString('ru')}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-[var(--text-secondary)] mb-1">Стоимость</div>
+                        <div className={`font-bold ${order.total_cost ? 'text-green-600' : 'text-gray-400'}`}>
+                          {order.total_cost ? `${order.total_cost.toLocaleString('ru')} ₽` : 'Не указана'}
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                  <div style={{ color: '#7f8c8d', fontSize: '14px' }}>
-                    📍 <strong>{order.cost_object_name || `Объект ${order.cost_object_id}`}</strong>
-                    {' • '}
-                    👷 <strong>{order.foreman_name || `Бригадир ${order.foreman_id}`}</strong>
-                    {' • '}
-                    📅 {new Date(order.created_at).toLocaleDateString('ru')}
+
+                  <div className="flex md:flex-col gap-2 justify-center pl-3 md:pl-0 border-t md:border-t-0 md:border-l border-[var(--separator-opaque)] pt-4 md:pt-0 md:w-40 shrink-0">
+                    {canManageOrders() && order.status === 'НОВАЯ' && (
+                      <button
+                        onClick={() => handleApprove(order.id)}
+                        className="flex items-center justify-center gap-2 w-full py-2 bg-green-500 text-white rounded-lg font-medium hover:bg-green-600 transition-colors text-sm"
+                      >
+                        <CheckCircle2 size={16} /> Утвердить
+                      </button>
+                    )}
+                    {canManageOrders() && order.status === 'УТВЕРЖДЕНА' && (
+                      <button
+                        onClick={() => openCostModal(order)}
+                        className="flex items-center justify-center gap-2 w-full py-2 bg-purple-500 text-white rounded-lg font-medium hover:bg-purple-600 transition-colors text-sm"
+                      >
+                        <DollarSign size={16} /> Стоимость
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setSelectedOrder(order)}
+                      className="flex items-center justify-center gap-2 w-full py-2 bg-[var(--blue-ios)] text-white rounded-lg font-medium hover:bg-blue-600 transition-colors text-sm"
+                    >
+                      <Info size={16} /> Подробнее
+                    </button>
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                  {canManageOrders() && order.status === 'НОВАЯ' && (
-                    <button
-                      onClick={() => handleApprove(order.id)}
-                      style={{
-                        padding: '8px 16px',
-                        backgroundColor: '#2ecc71',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        fontSize: '14px'
-                      }}
-                    >
-                      ✓ Утвердить
-                    </button>
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        </div>
+      )}
+
+      {/* Details Modal */}
+      {selectedOrder && (
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setSelectedOrder(null)}>
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="bg-[var(--bg-card)] rounded-2xl shadow-2xl max-w-2xl w-full max-h-[85vh] overflow-y-auto"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="p-6 border-b border-[var(--separator)] flex justify-between items-center sticky top-0 bg-[var(--bg-card)] z-10">
+              <div>
+                <h2 className="text-xl font-bold flex items-center gap-2">
+                  <Truck className="text-[var(--blue-ios)]" />
+                  Заявка #{selectedOrder.id}
+                </h2>
+                <div className="mt-1">
+                  <span className={`px-2 py-0.5 rounded text-xs font-bold border ${getStatusColor(selectedOrder.status)}`}>
+                    {getStatusText(selectedOrder.status)}
+                  </span>
+                </div>
+              </div>
+              <button onClick={() => setSelectedOrder(null)} className="p-2 hover:bg-[var(--bg-ios)] rounded-full text-[var(--text-secondary)]">
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Details Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="bg-[var(--bg-ios)] p-4 rounded-xl">
+                  <div className="flex items-center gap-2 mb-2 text-[var(--text-secondary)] font-medium text-sm">
+                    <User size={16} /> Заявитель
+                  </div>
+                  <div className="font-semibold text-[var(--text-primary)]">{selectedOrder.foreman_name || 'Неизвестно'}</div>
+                  <div className="text-xs text-[var(--text-secondary)] mt-1">{selectedOrder.foreman_phone}</div>
+                </div>
+                <div className="bg-[var(--bg-ios)] p-4 rounded-xl">
+                  <div className="flex items-center gap-2 mb-2 text-[var(--text-secondary)] font-medium text-sm">
+                    <MapPin size={16} /> Объект
+                  </div>
+                  <div className="font-semibold text-[var(--text-primary)]">{selectedOrder.cost_object_name || `Объект ${selectedOrder.cost_object_id}`}</div>
+                </div>
+                <div className="bg-[var(--bg-ios)] p-4 rounded-xl">
+                  <div className="flex items-center gap-2 mb-2 text-[var(--text-secondary)] font-medium text-sm">
+                    <Calendar size={16} /> Сроки
+                  </div>
+                  <div className="font-semibold text-[var(--text-primary)]">
+                    {new Date(selectedOrder.start_date).toLocaleDateString('ru')} - {new Date(selectedOrder.end_date).toLocaleDateString('ru')}
+                  </div>
+                  <div className="text-xs text-[var(--text-secondary)] mt-1">
+                    {calculateDays(selectedOrder.start_date, selectedOrder.end_date)} дней
+                  </div>
+                </div>
+                <div className="bg-[var(--bg-ios)] p-4 rounded-xl border border-green-100">
+                  <div className="flex items-center gap-2 mb-2 text-[var(--text-secondary)] font-medium text-sm">
+                    <CreditCard size={16} /> Финансы
+                  </div>
+                  <div className="font-semibold text-green-700 text-lg">
+                    {selectedOrder.total_cost ? `${selectedOrder.total_cost.toLocaleString('ru')} ₽` : '---'}
+                  </div>
+                  {selectedOrder.hour_rate && (
+                    <div className="text-xs text-[var(--text-secondary)] mt-1">
+                      Ставка: {selectedOrder.hour_rate} ₽/ч
+                    </div>
                   )}
-                  {canManageOrders() && order.status === 'УТВЕРЖДЕНА' && (
-                    <button
-                      onClick={() => openCostModal(order)}
-                      style={{
-                        padding: '8px 16px',
-                        backgroundColor: '#9b59b6',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        fontSize: '14px'
-                      }}
-                    >
-                      💰 Стоимость
-                    </button>
-                  )}
-                  <button
-                    onClick={() => setSelectedOrder(order)}
-                    style={{
-                      padding: '8px 16px',
-                      backgroundColor: '#3498db',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      fontSize: '14px'
-                    }}
-                  >
-                    👁 Подробнее
-                  </button>
                 </div>
               </div>
 
-              <div style={{ 
-                display: 'grid', 
-                gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
-                gap: '15px',
-                padding: '15px',
-                backgroundColor: '#f8f9fa',
-                borderRadius: '6px'
-              }}>
-                <div>
-                  <div style={{ color: '#7f8c8d', fontSize: '12px', marginBottom: '4px' }}>Тип техники</div>
-                  <div style={{ fontWeight: '600', fontSize: '15px' }}>🚜 {getEquipmentTypeText(order.equipment_type)}</div>
+              {selectedOrder.description && (
+                <div className="bg-yellow-50 border border-yellow-100 p-4 rounded-xl">
+                  <h4 className="font-medium text-yellow-800 flex items-center gap-2 mb-2">
+                    <Info size={16} /> Описание работ
+                  </h4>
+                  <p className="text-yellow-900 text-sm whitespace-pre-wrap">{selectedOrder.description}</p>
                 </div>
-                <div>
-                  <div style={{ color: '#7f8c8d', fontSize: '12px', marginBottom: '4px' }}>Количество</div>
-                  <div style={{ fontWeight: '600', fontSize: '15px' }}>{order.quantity} ед.</div>
-                </div>
-                <div>
-                  <div style={{ color: '#7f8c8d', fontSize: '12px', marginBottom: '4px' }}>Период аренды</div>
-                  <div style={{ fontWeight: '600', fontSize: '15px' }}>
-                    {new Date(order.start_date).toLocaleDateString('ru')} - {new Date(order.end_date).toLocaleDateString('ru')}
-                    <span style={{ color: '#7f8c8d', fontWeight: '400', marginLeft: '8px' }}>
-                      ({calculateDays(order.start_date, order.end_date)} дн.)
-                    </span>
-                  </div>
-                </div>
-                <div>
-                  <div style={{ color: '#7f8c8d', fontSize: '12px', marginBottom: '4px' }}>Стоимость</div>
-                  <div style={{ fontWeight: '600', fontSize: '15px', color: order.total_cost ? '#27ae60' : '#95a5a6' }}>
-                    {order.total_cost ? `${order.total_cost.toLocaleString('ru')} ₽` : 'Не указана'}
-                  </div>
-                </div>
-              </div>
+              )}
 
-              {order.description && (
-                <div style={{ 
-                  marginTop: '10px',
-                  padding: '10px', 
-                  backgroundColor: '#fef9e7', 
-                  borderRadius: '4px',
-                  fontSize: '14px'
-                }}>
-                  💬 <strong>Описание работ:</strong> {order.description}
+              {selectedOrder.rejection_reason && (
+                <div className="bg-red-50 border border-red-100 p-4 rounded-xl">
+                  <h4 className="font-medium text-red-800 flex items-center gap-2 mb-2">
+                    <AlertCircle size={16} /> Причина отклонения
+                  </h4>
+                  <p className="text-red-900 text-sm">{selectedOrder.rejection_reason}</p>
                 </div>
               )}
             </div>
-          ))}
+          </motion.div>
         </div>
       )}
 
-      {/* Модальное окно "Подробнее" */}
-      {selectedOrder && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.5)',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          zIndex: 1000
-        }}
-        onClick={() => setSelectedOrder(null)}
-        >
-          <div style={{
-            backgroundColor: 'white',
-            padding: '30px',
-            borderRadius: '12px',
-            maxWidth: '600px',
-            width: '95%',
-            maxHeight: '85vh',
-            overflow: 'auto',
-            boxShadow: '0 4px 20px rgba(0,0,0,0.3)'
-          }}
-          onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '20px' }}>
-              <div>
-                <h2 style={{ margin: 0, marginBottom: '10px' }}>🚜 Заявка #{selectedOrder.id}</h2>
-                <span style={{
-                  padding: '6px 14px',
-                  borderRadius: '12px',
-                  fontSize: '13px',
-                  fontWeight: '600',
-                  backgroundColor: getStatusColor(selectedOrder.status) + '20',
-                  color: getStatusColor(selectedOrder.status)
-                }}>
-                  {getStatusText(selectedOrder.status)}
-                </span>
-              </div>
-              <button
-                onClick={() => setSelectedOrder(null)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  fontSize: '24px',
-                  cursor: 'pointer',
-                  color: '#7f8c8d'
-                }}
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* Информация о заявителе */}
-            <div style={{ 
-              backgroundColor: '#f8f9fa', 
-              padding: '15px', 
-              borderRadius: '8px',
-              marginBottom: '20px'
-            }}>
-              <h4 style={{ margin: '0 0 10px 0', color: '#2c3e50' }}>👷 Информация о заявителе</h4>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px' }}>
-                <div>
-                  <div style={{ color: '#7f8c8d', fontSize: '12px' }}>Бригадир</div>
-                  <div style={{ fontWeight: '600' }}>{selectedOrder.foreman_name || `ID ${selectedOrder.foreman_id}`}</div>
-                </div>
-                <div>
-                  <div style={{ color: '#7f8c8d', fontSize: '12px' }}>Дата создания</div>
-                  <div style={{ fontWeight: '600' }}>{new Date(selectedOrder.created_at).toLocaleString('ru')}</div>
-                </div>
-              </div>
-            </div>
-
-            {/* Детали заявки */}
-            <div style={{ 
-              backgroundColor: '#fff', 
-              border: '1px solid #ecf0f1',
-              padding: '15px', 
-              borderRadius: '8px',
-              marginBottom: '20px'
-            }}>
-              <h4 style={{ margin: '0 0 15px 0', color: '#2c3e50' }}>📋 Детали заявки</h4>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px' }}>
-                <div>
-                  <div style={{ color: '#7f8c8d', fontSize: '12px' }}>Объект</div>
-                  <div style={{ fontWeight: '600' }}>{selectedOrder.cost_object_name || `ID ${selectedOrder.cost_object_id}`}</div>
-                </div>
-                <div>
-                  <div style={{ color: '#7f8c8d', fontSize: '12px' }}>Тип техники</div>
-                  <div style={{ fontWeight: '600' }}>{getEquipmentTypeText(selectedOrder.equipment_type)}</div>
-                </div>
-                <div>
-                  <div style={{ color: '#7f8c8d', fontSize: '12px' }}>Количество</div>
-                  <div style={{ fontWeight: '600' }}>{selectedOrder.quantity} ед.</div>
-                </div>
-                <div>
-                  <div style={{ color: '#7f8c8d', fontSize: '12px' }}>Период аренды</div>
-                  <div style={{ fontWeight: '600' }}>
-                    {new Date(selectedOrder.start_date).toLocaleDateString('ru')} - {new Date(selectedOrder.end_date).toLocaleDateString('ru')}
-                  </div>
-                </div>
-                <div>
-                  <div style={{ color: '#7f8c8d', fontSize: '12px' }}>Дней аренды</div>
-                  <div style={{ fontWeight: '600' }}>{calculateDays(selectedOrder.start_date, selectedOrder.end_date)}</div>
-                </div>
-                {selectedOrder.hour_rate && (
-                  <div>
-                    <div style={{ color: '#7f8c8d', fontSize: '12px' }}>Ставка в час</div>
-                    <div style={{ fontWeight: '600' }}>{selectedOrder.hour_rate.toLocaleString('ru')} ₽/ч</div>
-                  </div>
-                )}
-                {selectedOrder.hours_worked && (
-                  <div>
-                    <div style={{ color: '#7f8c8d', fontSize: '12px' }}>Отработано часов</div>
-                    <div style={{ fontWeight: '600' }}>{selectedOrder.hours_worked} ч</div>
-                  </div>
-                )}
-                <div>
-                  <div style={{ color: '#7f8c8d', fontSize: '12px' }}>Итоговая стоимость</div>
-                  <div style={{ fontWeight: '600', color: selectedOrder.total_cost ? '#27ae60' : '#95a5a6' }}>
-                    {selectedOrder.total_cost ? `${selectedOrder.total_cost.toLocaleString('ru')} ₽` : 'Не указана'}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {selectedOrder.description && (
-              <div style={{ 
-                backgroundColor: '#fef9e7', 
-                border: '1px solid #f9e79f',
-                padding: '15px', 
-                borderRadius: '8px',
-                marginBottom: '20px'
-              }}>
-                <h4 style={{ margin: '0 0 10px 0', color: '#2c3e50' }}>💬 Описание работ</h4>
-                <div>{selectedOrder.description}</div>
-              </div>
-            )}
-
-            {selectedOrder.rejection_reason && (
-              <div style={{ 
-                backgroundColor: '#fdedec', 
-                border: '1px solid #f5b7b1',
-                padding: '15px', 
-                borderRadius: '8px',
-                marginBottom: '20px'
-              }}>
-                <h4 style={{ margin: '0 0 10px 0', color: '#c0392b' }}>❌ Причина отклонения</h4>
-                <div>{selectedOrder.rejection_reason}</div>
-              </div>
-            )}
-
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-              <button
-                onClick={() => setSelectedOrder(null)}
-                style={{
-                  padding: '12px 24px',
-                  backgroundColor: '#95a5a6',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '14px'
-                }}
-              >
-                Закрыть
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Модальное окно установки стоимости */}
+      {/* Cost Modal */}
       {showCostModal && costOrder && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.5)',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          zIndex: 1001
-        }}
-        onClick={() => setShowCostModal(false)}
-        >
-          <div style={{
-            backgroundColor: 'white',
-            padding: '30px',
-            borderRadius: '12px',
-            maxWidth: '400px',
-            width: '95%',
-            boxShadow: '0 4px 20px rgba(0,0,0,0.3)'
-          }}
-          onClick={(e) => e.stopPropagation()}
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-[var(--bg-card)] rounded-2xl shadow-xl w-full max-w-sm p-6"
           >
-            <h3 style={{ margin: '0 0 20px 0' }}>💰 Установить стоимость</h3>
-            <p style={{ color: '#7f8c8d', marginBottom: '15px' }}>
-              Заявка #{costOrder.id}<br/>
-              Техника: <strong>{getEquipmentTypeText(costOrder.equipment_type)}</strong>
+            <h3 className="text-lg font-bold mb-4 text-[var(--text-primary)]">Установить стоимость</h3>
+            <p className="text-sm text-[var(--text-secondary)] mb-4">
+              Укажите почасовую ставку для <strong>{getEquipmentTypeText(costOrder.equipment_type)}</strong>
             </p>
-            
-            <div style={{ marginBottom: '20px' }}>
-              <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>Ставка за час (₽):</label>
+
+            <div className="mb-6">
+              <label className="block text-sm font-medium mb-1.5 text-[var(--text-secondary)]">Ставка (₽/час)</label>
               <input
                 type="number"
                 value={hourRate}
                 onChange={(e) => setHourRate(e.target.value)}
-                placeholder="Введите ставку"
-                style={{
-                  width: '100%',
-                  padding: '10px',
-                  borderRadius: '6px',
-                  border: '1px solid #ddd',
-                  fontSize: '14px',
-                  boxSizing: 'border-box'
-                }}
+                className="w-full p-3 bg-[var(--bg-ios)] rounded-xl border-none outline-none focus:ring-2 focus:ring-[var(--blue-ios)]"
+                placeholder="0.00"
+                autoFocus
               />
             </div>
 
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+            <div className="flex gap-3">
               <button
                 onClick={() => setShowCostModal(false)}
-                style={{
-                  padding: '10px 20px',
-                  backgroundColor: '#95a5a6',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '6px',
-                  cursor: 'pointer'
-                }}
+                className="flex-1 py-2.5 bg-gray-100 text-gray-600 rounded-xl font-medium hover:bg-gray-200 transition-colors"
               >
                 Отмена
               </button>
               <button
                 onClick={handleSetCost}
                 disabled={!hourRate}
-                style={{
-                  padding: '10px 20px',
-                  backgroundColor: hourRate ? '#27ae60' : '#bdc3c7',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '6px',
-                  cursor: hourRate ? 'pointer' : 'not-allowed'
-                }}
+                className="flex-1 py-2.5 bg-[var(--blue-ios)] text-white rounded-xl font-medium hover:bg-blue-600 transition-colors disabled:opacity-50"
               >
                 Сохранить
               </button>
             </div>
-          </div>
+          </motion.div>
         </div>
       )}
     </div>

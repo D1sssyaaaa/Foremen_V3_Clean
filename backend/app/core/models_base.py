@@ -74,11 +74,22 @@ class RegistrationRequestStatus(str, PyEnum):
     REJECTED = "REJECTED"    # Отклонена
 
 
+
 class ObjectAccessRequestStatus(str, PyEnum):
     """Статусы запросов доступа к объектам"""
     PENDING = "PENDING"      # Ожидает рассмотрения
     APPROVED = "APPROVED"    # Одобрена
     REJECTED = "REJECTED"    # Отклонена
+
+
+class TimeSheetStatus(str, PyEnum):
+    """Статусы табелей рабочего времени"""
+    DRAFT = "DRAFT"
+    UNDER_REVIEW = "UNDER_REVIEW"
+    APPROVED = "APPROVED"
+    CORRECTED = "CORRECTED"
+    CANCELLED = "CANCELLED"
+
 
 
 class TimestampMixin:

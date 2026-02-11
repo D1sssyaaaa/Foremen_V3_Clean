@@ -1,4 +1,5 @@
 """Бизнес-логика модуля UPD"""
+import hashlib
 import json
 from datetime import datetime
 from decimal import Decimal
@@ -12,7 +13,11 @@ from app.models import (
     CostEntry, MaterialRequest, CostObject, UPDStatus
 )
 from app.upd.upd_parser import UPDParser, UPDDocument, ParsingIssue
-from app.upd.schemas import DistributionItemCreate
+from app.upd.schemas import (
+    DistributionItemCreate, 
+    DistributionSuggestions, 
+    DistributionSuggestionItem
+)
 
 
 class UPDService:
@@ -39,13 +44,24 @@ class UPDService:
         Returns:
             MaterialCost объект с распарсенными данными
         """
+        # Вычисление SHA-256 хэша файла для дедупликации
+        file_hash = hashlib.sha256(xml_content).hexdigest()
+        
+        # Быстрая проверка по хэшу: если точно такой файл уже загружен — отклоняем
+        existing_by_hash = await self._check_file_hash(file_hash)
+        if existing_by_hash:
+            raise ValueError(
+                f"Этот файл уже загружен (УПД №{existing_by_hash.document_number} "
+                f"от {existing_by_hash.document_date.strftime('%d.%m.%Y')})"
+            )
+        
         # Парсинг XML
         try:
             upd_doc = self.parser.parse(xml_content)
         except ValueError as e:
             raise ValueError(f"Ошибка парсинга УПД: {str(e)}")
         
-        # Проверка на дубликаты перед созданием
+        # Проверка на дубликаты по номеру/дате/ИНН
         duplicate = None
         if auto_check_duplicate:
             duplicate = await self.check_duplicate(
@@ -63,6 +79,7 @@ class UPDService:
             total_amount=upd_doc.total_amount,
             vat_amount=upd_doc.total_vat,
             xml_file_path=file_path,
+            file_hash=file_hash,
             status=UPDStatus.DUPLICATE if duplicate else UPDStatus.NEW,
             duplicate_of_id=duplicate.id if duplicate else None,
             duplicate_checked_at=datetime.utcnow() if auto_check_duplicate else None,
@@ -312,6 +329,12 @@ class UPDService:
             return json.loads(issues_json)
         except json.JSONDecodeError:
             return []
+    
+    async def _check_file_hash(self, file_hash: str) -> Optional[MaterialCost]:
+        """Проверка: загружался ли файл с таким SHA-256 хэшем ранее"""
+        query = select(MaterialCost).where(MaterialCost.file_hash == file_hash)
+        result = await self.db.execute(query)
+        return result.scalar_one_or_none()
     
     async def check_duplicate(
         self, 
@@ -620,3 +643,47 @@ class UPDService:
         await self.db.refresh(upd)
         
         return upd
+
+    async def suggest_distribution(self, upd_id: int, cost_object_id: Optional[int] = None) -> DistributionSuggestions:
+        """Получение предложений по распределению для УПД"""
+        from app.services.smart_mapping import SmartMappingService
+
+        upd = await self.get_upd_by_id(upd_id)
+        if not upd:
+            raise ValueError(f"УПД {upd_id} не найден")
+
+        mapping_service = SmartMappingService(self.db)
+        suggestions = []
+
+        # Если объект не передан, попробуем взять из УПД (если уже был распределен частично)
+        target_object_id = cost_object_id or upd.cost_object_id
+
+        for item in upd.items:
+            match = await mapping_service.find_best_match(
+                product_name=item.product_name,
+                supplier_inn=upd.supplier_inn,
+                cost_object_id=target_object_id
+            )
+            
+            if match:
+                suggestions.append(DistributionSuggestionItem(
+                    material_cost_item_id=item.id,
+                    product_name=item.product_name,
+                    suggested_estimate_item_id=match["estimate_item_id"],
+                    suggested_cost_object_id=match.get("suggested_cost_object_id"),
+                    suggested_cost_object_name=match.get("suggested_cost_object_name"),
+                    confidence=match["confidence"],
+                    source=match["source"],
+                    matched_name=match["matched_name"]
+                ))
+            else:
+                 suggestions.append(DistributionSuggestionItem(
+                    material_cost_item_id=item.id,
+                    product_name=item.product_name,
+                    suggested_estimate_item_id=None,
+                    confidence=0.0,
+                    source=None,
+                    matched_name=None
+                ))
+
+        return DistributionSuggestions(upd_id=upd.id, suggestions=suggestions)

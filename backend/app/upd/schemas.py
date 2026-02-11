@@ -112,3 +112,21 @@ class UPDListItem(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class DistributionSuggestionItem(BaseModel):
+    """Предложение по распределению строки УПД"""
+    material_cost_item_id: int
+    product_name: str
+    suggested_estimate_item_id: Optional[int] = None
+    suggested_cost_object_id: Optional[int] = None
+    suggested_cost_object_name: Optional[str] = None
+    confidence: float
+    source: Optional[str] = None
+    matched_name: Optional[str] = None
+
+
+class DistributionSuggestions(BaseModel):
+    """Список предложений по распределению для УПД"""
+    upd_id: int
+    suggestions: List[DistributionSuggestionItem]

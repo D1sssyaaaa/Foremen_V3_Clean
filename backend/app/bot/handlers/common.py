@@ -27,27 +27,27 @@ async def cmd_start(message: Message, state: FSMContext):
     
     # Авторизация через Telegram ID
     api = APIClient()
-    token = await api.login_telegram(message.from_user.id)
+    login_data = await api.login_telegram(message.from_user.id)
     await api.close()
     
-    if token:
-        # Сохраняем токен в состояние пользователя
-        await state.update_data(token=token)
+    if login_data and "access_token" in login_data:
+        token = login_data["access_token"]
+        user_data = login_data.get("user", {})
+        role = user_data.get("role", "FOREMAN") # Default role if not found
+        
+        # Сохраняем токен и роль в состояние
+        await state.update_data(token=token, role=role)
         
         welcome_text = (
             f"👋 Добро пожаловать, {message.from_user.full_name}!\n\n"
             "🏗️ <b>Система учета затрат строительной компании</b>\n\n"
-            "Я помогу вам:\n"
-            "• 📦 Создавать заявки на материалы (включая инертные)\n"
-            "• 🚜 Заказывать технику и инструмент\n"
-            "• 📊 Подавать табели рабочего времени\n"
-            "• 📈 Отслеживать статусы заявок\n\n"
+            f"👤 Ваша роль: <b>{role}</b>\n\n"
             "Выберите действие из меню ⬇️"
         )
         await message.answer(
             welcome_text,
             parse_mode="HTML",
-            reply_markup=get_main_menu_keyboard()
+            reply_markup=get_main_menu_keyboard(role=role)
         )
     else:
         # Проверяем, может ли пользователь подать заявку на регистрацию

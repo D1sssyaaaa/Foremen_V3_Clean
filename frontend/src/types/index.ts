@@ -58,43 +58,8 @@ export interface CostObject {
 }
 
 // УПД
-export interface UPDDocument {
-  id: number;
-  document_number: string;
-  document_date: string;
-  supplier_name: string;
-  supplier_inn: string | null;
-  total_amount: number;
-  total_vat: number;
-  total_with_vat: number;
-  status: 'NEW' | 'DISTRIBUTED' | 'ARCHIVED';
-  items_count: number;
-  xml_file_path: string;
-  generator: string | null;
-  parsing_issues_count: number;
-  created_at: string;
-}
-
-export interface UPDItem {
-  id: number;
-  product_name: string;
-  quantity: number;
-  unit: string;
-  price: number;
-  amount: number;
-  vat_rate: number;
-  vat_amount: number;
-  total_with_vat: number;
-}
-
-export interface UPDDetailResponse extends UPDDocument {
-  items: UPDItem[];
-  buyer_name?: string | null;
-  buyer_inn?: string | null;
-  format_version?: string | null;
-  parsing_issues?: any[];
-  updated_at?: string;
-}
+// УПД
+export * from './upd';
 
 // Заявки на материалы
 export interface MaterialRequest {
@@ -109,6 +74,13 @@ export interface MaterialRequest {
   urgency: string | null;
   delivery_address: string | null;
   items_count: number;
+  items?: {
+    id: number;
+    name: string;
+    quantity: number;
+    unit: string;
+  }[];
+  author_id?: number;
   created_at: string;
   updated_at: string;
 }

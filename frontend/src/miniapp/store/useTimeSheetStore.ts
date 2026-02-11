@@ -64,7 +64,7 @@ const getDraftKey = (date: Date, objectId: number | null) => {
 export const useTimeSheetStore = create<TimeSheetState>((set, get) => ({
     currentDate: new Date(),
     selectedObjectId: null,
-    selectedObjectId: null,
+
     entries: [],
     drafts: {},
     foremanId: null,

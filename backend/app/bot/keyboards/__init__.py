@@ -12,26 +12,74 @@ from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 
 from app.core.config import settings
 
-def get_main_menu_keyboard() -> ReplyKeyboardMarkup:
-    """Главное меню бота"""
+def get_main_menu_keyboard(role: str = None) -> ReplyKeyboardMarkup:
+    """Главное меню бота с учетом роли"""
     builder = ReplyKeyboardBuilder()
-    builder.row(
-        KeyboardButton(text="📝 Табель", web_app=WebAppInfo(url=f"{settings.miniapp_url}/miniapp/timesheets"))
-    )
-    builder.row(
-        KeyboardButton(text="📦 Заявка на материалы"),
-        KeyboardButton(text="🚜 Заявка на технику")
-    )
-    builder.row(
-        KeyboardButton(text="🚚 Создать доставку")
-    )
-    builder.row(
-        KeyboardButton(text="📈 Мои заявки"),
-        KeyboardButton(text="🏗️ Запросить доступ")
-    )
+    
+    # URL для Mini Apps (предполагаем, что они настроены)
+    # Используем settings.miniapp_url, который должен указывать на GitHub Pages
+    web_app_timesheet = WebAppInfo(url=f"{settings.miniapp_url}/miniapp/timesheets")
+    web_app_materials = WebAppInfo(url=f"{settings.miniapp_url}/miniapp/material-request/select-object") # Предполагаем такой роут или /objects
+    # Для материалов лучше открыть выбор объекта. Текущий роут /miniapp/objects
+    web_app_objects = WebAppInfo(url=f"{settings.miniapp_url}/miniapp/objects")
+    web_app_manager = WebAppInfo(url=f"{settings.miniapp_url}/miniapp/manager")
+    
+    # 1. Бригадир (FOREMAN)
+    if role == "FOREMAN":
+        builder.row(
+            KeyboardButton(text="📝 Табель", web_app=web_app_timesheet),
+            KeyboardButton(text="📦 Заказать материал", web_app=web_app_objects)
+        )
+        builder.row(
+            KeyboardButton(text="🚜 Заказать технику"), # Оставляем текстом/формой
+            KeyboardButton(text="📈 Мои заявки")
+        )
+        
+    # 2. Менеджер по снабжению (MATERIALS_MANAGER)
+    elif role == "MATERIALS_MANAGER":
+        builder.row(
+            KeyboardButton(text="📋 Активные заявки"), # Список заявок текстом/инлайн
+            KeyboardButton(text="🚚 Отгрузки")
+        )
+        builder.row(
+            KeyboardButton(text="📊 Архив заявок")
+        )
+        
+    # 3. Менеджер по технике (EQUIPMENT_MANAGER)
+    elif role == "EQUIPMENT_MANAGER":
+        builder.row(
+            KeyboardButton(text="🚜 График техники"), # Можно Mini App или текст
+            KeyboardButton(text="📋 Новые заявки")
+        )
+        builder.row(
+            KeyboardButton(text="✅ Активная техника")
+        )
+        
+    # 4. Руководитель (HEAD / ADMIN)
+    elif role in ["HEAD", "ADMIN", "MANAGER"]: # MANAGER теперь как Руководитель
+        builder.row(
+            KeyboardButton(text="📊 Панель руководителя", web_app=web_app_manager)
+        )
+        builder.row(
+            KeyboardButton(text="🏗 Объекты") # Список объектов текстом?
+        )
+        # Если Админ, добавим функционал всех
+        if role == "ADMIN":
+             builder.row(
+                KeyboardButton(text="🛠 Админ панель"),
+                KeyboardButton(text="🔄 Сменить роль") # Для тестов
+            )
+
+    # Базовое (Гость)
+    else:
+        builder.row(
+            KeyboardButton(text="📝 Регистрация")
+        )
+
     builder.row(
         KeyboardButton(text="ℹ️ Помощь")
     )
+    
     return builder.as_markup(resize_keyboard=True)
 
 

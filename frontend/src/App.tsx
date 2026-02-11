@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route, Navigate, Outlet } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './hooks/useAuth';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { Layout } from './components/Layout';
@@ -17,6 +17,7 @@ import { EquipmentOrdersPage } from './pages/EquipmentOrdersPage';
 import { AnalyticsPage } from './pages/AnalyticsPage';
 import { NotificationsPage } from './pages/NotificationsPage';
 import { AdminPage } from './pages/AdminPage';
+import { TimesheetsPage } from './pages/TimesheetsPage'; // Timesheets management
 import { ManagerDashboardPage } from './pages/ManagerDashboardPage';
 
 import { ManagerPortfolioPage } from './miniapp-manager/pages/ManagerPortfolioPage';
@@ -29,11 +30,12 @@ import { MyRequestsPage } from './miniapp/pages/MyRequestsPage';
 import { ThemeProvider } from './miniapp-manager/context/ThemeContext';
 
 
+
 function App() {
   return (
     <AuthProvider>
       <ThemeProvider>
-        <Router>
+        <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
@@ -140,6 +142,17 @@ function App() {
             />
 
             <Route
+              path="/timesheets"
+              element={
+                <ProtectedRoute roles={['HR_MANAGER', 'MANAGER', 'ADMIN', 'FOREMAN']}>
+                  <Layout>
+                    <TimesheetsPage />
+                  </Layout>
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
               path="/admin"
               element={
                 <ProtectedRoute roles={['ADMIN']}>
@@ -160,6 +173,8 @@ function App() {
                 </ProtectedRoute>
               }
             />
+
+
 
 
             {/* Mini App Routes */}

@@ -309,3 +309,88 @@ async def process_confirm_no(callback: CallbackQuery, state: FSMContext):
     if token:
         await state.update_data(token=token)
     await callback.answer()
+
+
+# === Logic for Submitting Hours ===
+
+@router.callback_query(F.data.startswith("eq:hours:"))
+async def start_submit_hours(callback: CallbackQuery, state: FSMContext):
+    """Начало подачи часов (из уведомления)"""
+    # eq:hours:{order_id}
+    order_id = int(callback.data.split(":")[2])
+    
+    await state.update_data(hours_order_id=order_id)
+    
+    await callback.message.answer(
+        f"⏱ <b>Подача часов по заявке #{order_id}</b>\n\n"
+        "Введите количество отработанных часов (например: 8 или 4.5):",
+        parse_mode="HTML"
+    )
+    await state.set_state(EquipmentOrderStates.input_hours)
+    await callback.answer()
+
+@router.message(EquipmentOrderStates.input_hours)
+async def process_hours_input(message: Message, state: FSMContext):
+    """Ввод часов"""
+    try:
+        hours = float(message.text.replace(",", "."))
+        if hours <= 0:
+            await message.answer("❌ Количество часов должно быть больше нуля.")
+            return
+            
+        await state.update_data(hours_value=hours)
+        
+        await message.answer(
+            "📝 Введите описание работ (или отправьте '-', если нет):",
+            parse_mode="HTML"
+        )
+        await state.set_state(EquipmentOrderStates.input_hours_description)
+        
+    except ValueError:
+        await message.answer("❌ Введите корректное число (например: 8 или 4.5)")
+
+@router.message(EquipmentOrderStates.input_hours_description)
+async def process_hours_description(message: Message, state: FSMContext):
+    """Ввод описания и сохранение"""
+    description = message.text.strip()
+    if description == "-":
+        description = None
+        
+    data = await state.get_data()
+    order_id = data.get("hours_order_id")
+    hours = data.get("hours_value")
+    token = data.get("token")
+    
+    if not token:
+        await message.answer("❌ Ошибка авторизации. Введите /start")
+        await state.clear()
+        return
+
+    api = APIClient(token)
+    try:
+        payload = {
+            "hours_worked": hours,
+            "work_date": date.today().isoformat(), # Текущая дата
+            "description": description
+        }
+        
+        await api.add_equipment_hours(order_id, payload)
+        
+        await message.answer(
+            f"✅ <b>Часы приняты!</b>\n"
+            f"Заявка #{order_id}: {hours} ч.",
+            parse_mode="HTML"
+        )
+        # Возвращаем в меню
+        await message.answer("📱 Главное меню:", reply_markup=get_main_menu_keyboard())
+        
+    except Exception as e:
+        await message.answer(f"❌ Ошибка: {str(e)}")
+        # Не сбрасываем состояние полностью чтобы можно было повторить?
+        # Или сбрасываем и просим начать заново
+    finally:
+        await api.close()
+        # Сохраняем токен
+        await state.clear()
+        if token:
+            await state.update_data(token=token)

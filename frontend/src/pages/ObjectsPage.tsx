@@ -2,12 +2,27 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiClient } from '../api/client';
 import type { CostObject } from '../types';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  Plus,
+  Search,
+  Building2,
+  FileText,
+  TrendingUp,
+  AlertTriangle,
+  X,
+  Upload,
+  Briefcase
+} from 'lucide-react';
 
 export function ObjectsPage() {
   const navigate = useNavigate();
   const [objects, setObjects] = useState<CostObject[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+
+  // Form State
   const [file, setFile] = useState<File | null>(null);
   const [newObject, setNewObject] = useState({
     name: '',
@@ -40,7 +55,6 @@ export function ObjectsPage() {
     }
 
     try {
-      // Use uploadFile helper which sends FormData
       await apiClient.uploadFile('/objects/', file, {
         ...newObject,
         labor_amount: newObject.labor_amount && !isNaN(parseFloat(newObject.labor_amount)) ? parseFloat(newObject.labor_amount) : undefined
@@ -50,54 +64,24 @@ export function ObjectsPage() {
       setNewObject({ name: '', customer_name: '', contract_number: '', labor_amount: '' });
       setFile(null);
       await loadObjects();
-      alert('Объект успешно создан и смета загружена!');
     } catch (err: any) {
-      console.error("Full error object:", err);
-      if (err.response && err.response.data) {
-        console.error("Error Response Data:", JSON.stringify(err.response.data, null, 2));
-      }
-      let errorMessage = 'Ошибка создания объекта';
-
-      if (err.response?.data?.detail) {
-        const detail = err.response.data.detail;
-        if (Array.isArray(detail)) {
-          // Handle Pydantic validation errors (array of objects)
-          errorMessage = detail.map((e: any) => {
-            const field = e.loc ? e.loc.join('.') : 'Unknown field';
-            return `${field}: ${e.msg}`;
-          }).join('\n');
-        } else if (typeof detail === 'object') {
-          errorMessage = JSON.stringify(detail);
-        } else {
-          errorMessage = String(detail);
-        }
-      } else if (err.message) {
-        errorMessage = err.message;
-      }
-
-      alert(`Ошибка при создании объекта:\n${errorMessage}`);
+      console.error("Error creating object:", err);
+      alert('Ошибка при создании объекта. Проверьте консоль для деталей.');
     }
   };
 
   const formatMoney = (amount?: number | null) => {
     if (amount === undefined || amount === null) return '-';
-    return amount.toLocaleString('ru-RU', { style: 'decimal', minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  };
-
-  const formatPercent = (percent?: number | null) => {
-    if (percent === undefined || percent === null) return '-';
-    // If percent is 0 and diff is 0, show 0. If data missing, show -
-    if (isNaN(percent)) return '-';
-    return `${percent.toFixed(1)}%`;
+    return amount.toLocaleString('ru-RU', { style: 'currency', currency: 'RUB', maximumFractionDigits: 0 });
   };
 
   const getStatusColor = (status?: string) => {
     switch (status) {
-      case 'ACTIVE': return '#27ae60'; // Green
-      case 'CLOSED': return '#95a5a6'; // Gray
-      case 'ARCHIVE': return '#7f8c8d'; // Dark Gray
-      case 'PREPARATION_TO_CLOSE': return '#f39c12'; // Orange
-      default: return '#2c3e50';
+      case 'ACTIVE': return 'bg-green-100 text-green-700 border-green-200';
+      case 'CLOSED': return 'bg-gray-100 text-gray-600 border-gray-200';
+      case 'ARCHIVE': return 'bg-gray-100 text-gray-500 border-gray-200';
+      case 'PREPARATION_TO_CLOSE': return 'bg-orange-100 text-orange-700 border-orange-200';
+      default: return 'bg-blue-100 text-blue-700 border-blue-200';
     }
   };
 
@@ -111,222 +95,236 @@ export function ObjectsPage() {
     }
   };
 
-  const getColorForValue = (val?: number) => {
-    if (!val) return 'inherit';
-    return val >= 0 ? 'green' : 'red';
-  };
-
-  if (loading) {
-    return <div>Загрузка...</div>;
-  }
-
-  // Styles
-  const thStyle = {
-    padding: '10px',
-    borderRight: '1px solid #bdc3c7',
-    borderBottom: '1px solid #bdc3c7',
-    backgroundColor: '#ecf0f1',
-    fontSize: '12px',
-    fontWeight: 'bold',
-    textAlign: 'center' as const,
-    verticalAlign: 'middle',
-    minWidth: '80px'
-  };
-
-  const tdStyle = {
-    padding: '8px 10px',
-    borderRight: '1px solid #ecf0f1',
-    borderBottom: '1px solid #ecf0f1',
-    fontSize: '13px',
-    verticalAlign: 'middle'
-  };
+  const filteredObjects = objects.filter(obj =>
+    obj.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    obj.contract_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    obj.customer_name?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-        <h1 style={{ margin: 0 }}>Сводная таблица объектов</h1>
+    <div className="space-y-6 animate-fade-in">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-[var(--text-primary)] tracking-tight">Объекты</h1>
+          <p className="text-[var(--text-secondary)]">Управление строительными объектами</p>
+        </div>
         <button
           onClick={() => setShowCreateModal(true)}
-          style={{
-            padding: '10px 20px',
-            backgroundColor: '#3498db',
-            color: 'white',
-            border: 'none',
-            borderRadius: '6px',
-            cursor: 'pointer'
-          }}
+          className="flex items-center gap-2 bg-[var(--blue-ios)] text-white px-5 py-2.5 rounded-xl font-medium active:scale-95 transition-transform shadow-sm hover:shadow-md"
         >
-          Добавить объект
+          <Plus size={20} />
+          <span>Добавить объект</span>
         </button>
       </div>
 
-      <div style={{
-        flex: 1,
-        overflow: 'auto',
-        backgroundColor: 'white',
-        borderRadius: '8px',
-        boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-        border: '1px solid #bdc3c7'
-      }}>
-        <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, minWidth: '1500px' }}>
-          <thead style={{ position: 'sticky', top: 0, zIndex: 10 }}>
-            <tr>
-              <th rowSpan={2} style={{ ...thStyle, left: 0, zIndex: 11, borderRight: '2px solid #bdc3c7' }}>Статус</th>
-              <th rowSpan={2} style={{ ...thStyle, left: '80px', zIndex: 11, minWidth: '200px' }}>Наименование объекта</th>
-              <th rowSpan={2} style={thStyle}>Заказчик</th>
-              <th rowSpan={2} style={thStyle}>Договор</th>
+      {/* Search */}
+      <div className="relative">
+        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+        <input
+          type="text"
+          placeholder="Поиск по названию, договору или заказчику..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="w-full pl-11 pr-4 py-3 bg-[var(--bg-card)] border border-[var(--separator)] rounded-xl text-[var(--text-primary)] focus:ring-2 focus:ring-[var(--blue-ios)] focus:border-transparent outline-none transition-all"
+        />
+      </div>
 
-              <th colSpan={2} style={{ ...thStyle, backgroundColor: '#d1f2eb' }}>СТОИМОСТЬ ПО ДОГОВОРУ (ПЛАН)</th>
-              <th colSpan={2} style={{ ...thStyle, backgroundColor: '#fadbd8' }}>ФАКТИЧЕСКИЕ ЗАТРАТЫ</th>
-              <th colSpan={3} style={{ ...thStyle, backgroundColor: '#d6eaf8' }}>РАЗНИЦА (ПРИБЫЛЬ)</th>
-              <th colSpan={2} style={{ ...thStyle, backgroundColor: '#fcf3cf' }}>РЕНТАБЕЛЬНОСТЬ %</th>
-            </tr>
-            <tr>
-              {/* PLAN */}
-              <th style={{ ...thStyle, backgroundColor: '#d1f2eb' }}>Работа</th>
-              <th style={{ ...thStyle, backgroundColor: '#d1f2eb' }}>Материал</th>
-
-              {/* FACT */}
-              <th style={{ ...thStyle, backgroundColor: '#fadbd8' }}>Работа</th>
-              <th style={{ ...thStyle, backgroundColor: '#fadbd8' }}>Материал</th>
-
-              {/* DIFF */}
-              <th style={{ ...thStyle, backgroundColor: '#d6eaf8' }}>Работа</th>
-              <th style={{ ...thStyle, backgroundColor: '#d6eaf8' }}>Материал</th>
-              <th style={{ ...thStyle, backgroundColor: '#d6eaf8', fontWeight: '800' }}>ИТОГО</th>
-
-              {/* MARGIN */}
-              <th style={{ ...thStyle, backgroundColor: '#fcf3cf' }}>Работа</th>
-              <th style={{ ...thStyle, backgroundColor: '#fcf3cf' }}>Материал</th>
-            </tr>
-          </thead>
-          <tbody>
-            {objects.map(obj => {
+      {/* Grid */}
+      {loading ? (
+        <div className="flex justify-center py-20">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[var(--blue-ios)]"></div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+          <AnimatePresence>
+            {filteredObjects.map(obj => {
               const stats = obj.stats || {
                 plan: { materials: 0, labor: 0, total: 0 },
                 fact: { materials: 0, labor: 0, total: 0 },
                 balance: { materials: 0, labor: 0, total: 0 },
                 margin_pct: { materials: 0, labor: 0 }
               };
+              const margin = stats.balance.total ?? 0;
+              const isProfit = margin >= 0;
 
               return (
-                <tr
+                <motion.div
                   key={obj.id}
+                  layout
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.9 }}
                   onClick={() => navigate(`/objects/${obj.id}`)}
-                  style={{ cursor: 'pointer', transition: 'background-color 0.1s' }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f4f6f7'}
-                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
+                  className="bg-[var(--bg-card)] rounded-2xl p-6 shadow-sm border border-[var(--separator)] cursor-pointer hover:shadow-md transition-shadow group relative overflow-hidden"
                 >
-                  {/* Status */}
-                  <td style={{ ...tdStyle, textAlign: 'center' }}>
-                    <span style={{
-                      padding: '4px 8px',
-                      borderRadius: '12px',
-                      fontSize: '11px',
-                      fontWeight: 'bold',
-                      color: 'white',
-                      backgroundColor: getStatusColor(obj.status),
-                      whiteSpace: 'nowrap'
-                    }}>
+                  <div className="flex justify-between items-start mb-4">
+                    <div className="p-3 bg-blue-50 text-blue-600 rounded-xl">
+                      <Building2 size={24} />
+                    </div>
+                    <span className={`px-3 py-1 rounded-full text-xs font-bold border ${getStatusColor(obj.status)}`}>
                       {getStatusText(obj.status)}
                     </span>
-                  </td>
-                  {/* Name */}
-                  <td style={{ ...tdStyle, fontWeight: '500' }}>
+                  </div>
+
+                  <h3 className="text-xl font-bold text-[var(--text-primary)] mb-1 group-hover:text-[var(--blue-ios)] transition-colors line-clamp-1">
                     {obj.name}
-                    <div style={{ fontSize: '10px', color: '#7f8c8d' }}>{obj.code}</div>
-                  </td>
-                  {/* Customer */}
-                  <td style={tdStyle}>{obj.customer_name || '-'}</td>
-                  {/* Contract */}
-                  <td style={tdStyle}>{obj.contract_number || '-'}</td>
+                  </h3>
+                  <div className="flex items-center gap-2 text-[var(--text-secondary)] text-sm mb-6">
+                    <FileText size={14} />
+                    <span>{obj.contract_number || 'Нет договора'}</span>
+                    <span>•</span>
+                    <span>{obj.customer_name || 'Заказчик не указан'}</span>
+                  </div>
 
-                  {/* PLAN */}
-                  <td style={{ ...tdStyle, textAlign: 'right' }}>{formatMoney(stats.plan.labor)}</td>
-                  <td style={{ ...tdStyle, textAlign: 'right' }}>{formatMoney(stats.plan.materials)}</td>
-
-                  {/* FACT */}
-                  <td style={{ ...tdStyle, textAlign: 'right', color: '#c0392b' }}>{formatMoney(stats.fact.labor)}</td>
-                  <td style={{ ...tdStyle, textAlign: 'right', color: '#c0392b' }}>{formatMoney(stats.fact.materials)}</td>
-
-                  {/* DIFF */}
-                  <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 'bold', color: getColorForValue(stats.balance.labor) }}>
-                    {formatMoney(stats.balance.labor)}
-                  </td>
-                  <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 'bold', color: getColorForValue(stats.balance.materials) }}>
-                    {formatMoney(stats.balance.materials)}
-                  </td>
-                  <td style={{ ...tdStyle, textAlign: 'right', fontWeight: '800', backgroundColor: '#ebf5fb', color: getColorForValue(stats.balance.total) }}>
-                    {formatMoney(stats.balance.total)}
-                  </td>
-
-                  {/* MARGIN */}
-                  <td style={{ ...tdStyle, textAlign: 'center', color: getColorForValue(stats.balance.labor) }}>
-                    {formatPercent(stats.margin_pct.labor)}
-                  </td>
-                  <td style={{ ...tdStyle, textAlign: 'center', color: getColorForValue(stats.balance.materials) }}>
-                    {formatPercent(stats.margin_pct.materials)}
-                  </td>
-                </tr>
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center py-2 border-b border-[var(--separator-opaque)]">
+                      <span className="text-[var(--text-secondary)] text-sm">Бюджет (План)</span>
+                      <span className="font-semibold text-[var(--text-primary)]">
+                        {formatMoney(stats.plan.total)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center py-2 border-b border-[var(--separator-opaque)]">
+                      <span className="text-[var(--text-secondary)] text-sm">Затраты (Факт)</span>
+                      <span className="font-semibold text-red-600">
+                        {formatMoney(stats.fact.total)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center pt-2">
+                      <span className="text-[var(--text-secondary)] text-sm flex items-center gap-1">
+                        Прибыль
+                        {isProfit ? <TrendingUp size={14} className="text-green-500" /> : <AlertTriangle size={14} className="text-red-500" />}
+                      </span>
+                      <span className={`font-bold ${isProfit ? 'text-green-600' : 'text-red-600'}`}>
+                        {formatMoney(margin)}
+                      </span>
+                    </div>
+                  </div>
+                </motion.div>
               );
             })}
-            {objects.length === 0 && (
-              <tr>
-                <td colSpan={13} style={{ textAlign: 'center', padding: '40px', color: '#7f8c8d' }}>
-                  Нет данных
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+          </AnimatePresence>
+        </div>
+      )}
 
+      {!loading && filteredObjects.length === 0 && (
+        <div className="text-center py-20 text-[var(--text-secondary)]">
+          <div className="bg-gray-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Search size={32} className="text-gray-400" />
+          </div>
+          <h3 className="text-lg font-medium text-[var(--text-primary)]">Объекты не найдены</h3>
+          <p>Попробуйте изменить параметры поиска или создайте новый объект</p>
+        </div>
+      )}
+
+      {/* Create User Modal */}
       {showCreateModal && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
-        }}>
-          <div style={{ backgroundColor: 'white', padding: '30px', borderRadius: '8px', width: '90%', maxWidth: '500px' }}>
-            <h2>Новый объект</h2>
-            <form onSubmit={handleCreateObject}>
-              <div style={{ marginBottom: '15px' }}>
-                <label style={{ display: 'block', marginBottom: '5px' }}>Название *</label>
-                <input required type="text" value={newObject.name} onChange={(e) => setNewObject({ ...newObject, name: e.target.value })} style={{ width: '100%', padding: '8px' }} />
-              </div>
-              <div style={{ marginBottom: '15px' }}>
-                <label style={{ display: 'block', marginBottom: '5px' }}>Заказчик</label>
-                <input type="text" value={newObject.customer_name} onChange={(e) => setNewObject({ ...newObject, customer_name: e.target.value })} style={{ width: '100%', padding: '8px' }} />
-              </div>
-              <div style={{ marginBottom: '15px' }}>
-                <label style={{ display: 'block', marginBottom: '5px' }}>Договор №</label>
-                <input type="text" value={newObject.contract_number} onChange={(e) => setNewObject({ ...newObject, contract_number: e.target.value })} style={{ width: '100%', padding: '8px' }} />
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="bg-[var(--bg-card)] rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden flex flex-col max-h-[90vh]"
+          >
+            <div className="flex justify-between items-center p-6 border-b border-[var(--separator)]">
+              <h2 className="text-xl font-bold text-[var(--text-primary)]">Новый объект</h2>
+              <button
+                onClick={() => setShowCreateModal(false)}
+                className="p-2 hover:bg-[var(--bg-ios)] rounded-full text-[var(--text-secondary)] transition-colors"
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateObject} className="p-6 overflow-y-auto space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">Название объекта *</label>
+                <input
+                  required
+                  type="text"
+                  value={newObject.name}
+                  onChange={(e) => setNewObject({ ...newObject, name: e.target.value })}
+                  className="w-full p-3 bg-[var(--bg-ios)] rounded-xl border-none focus:ring-2 focus:ring-[var(--blue-ios)] outline-none transition-all"
+                  placeholder="Жилой комплекс..."
+                />
               </div>
 
-              <div style={{ marginBottom: '15px', padding: '10px', backgroundColor: '#e8f8f5', borderRadius: '6px' }}>
-                <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Смета (Excel) *</label>
-                <div style={{ fontSize: '12px', color: '#16a085', marginBottom: '8px' }}>
-                  Бюджет на материалы будет рассчитан автоматически из файла.
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">Заказчик</label>
+                  <input
+                    type="text"
+                    value={newObject.customer_name}
+                    onChange={(e) => setNewObject({ ...newObject, customer_name: e.target.value })}
+                    className="w-full p-3 bg-[var(--bg-ios)] rounded-xl border-none focus:ring-2 focus:ring-[var(--blue-ios)] outline-none"
+                    placeholder="ООО Строй..."
+                  />
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">Договор №</label>
+                  <input
+                    type="text"
+                    value={newObject.contract_number}
+                    onChange={(e) => setNewObject({ ...newObject, contract_number: e.target.value })}
+                    className="w-full p-3 bg-[var(--bg-ios)] rounded-xl border-none focus:ring-2 focus:ring-[var(--blue-ios)] outline-none"
+                    placeholder="123/23-К"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">ФОТ (План)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={newObject.labor_amount}
+                  onChange={(e) => setNewObject({ ...newObject, labor_amount: e.target.value })}
+                  className="w-full p-3 bg-[var(--bg-ios)] rounded-xl border-none focus:ring-2 focus:ring-[var(--blue-ios)] outline-none"
+                  placeholder="0.00"
+                />
+              </div>
+
+              <div className="p-4 bg-blue-50 rounded-xl border border-blue-100">
+                <label className="block text-sm font-bold text-blue-800 mb-2 flex items-center gap-2">
+                  <Upload size={16} />
+                  Смета (Excel) *
+                </label>
+                <p className="text-xs text-blue-600 mb-3">
+                  Бюджет на материалы и этапы работ будут созданы автоматически из файла сметы.
+                </p>
                 <input
                   required
                   type="file"
                   accept=".xlsx, .xls"
                   onChange={(e) => setFile(e.target.files ? e.target.files[0] : null)}
-                  style={{ width: '100%' }}
+                  className="block w-full text-sm text-blue-500
+                      file:mr-4 file:py-2 file:px-4
+                      file:rounded-full file:border-0
+                      file:text-sm file:font-semibold
+                      file:bg-blue-100 file:text-blue-700
+                      hover:file:bg-blue-200 transaction-colors
+                    "
                 />
               </div>
 
-              <div style={{ marginBottom: '15px' }}>
-                <label style={{ display: 'block', marginBottom: '5px' }}>План Работы (ФОТ)</label>
-                <input type="number" step="0.01" value={newObject.labor_amount} onChange={(e) => setNewObject({ ...newObject, labor_amount: e.target.value })} style={{ width: '100%', padding: '8px' }} />
-              </div>
-
-              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '20px' }}>
-                <button type="button" onClick={() => setShowCreateModal(false)}>Отмена</button>
-                <button type="submit" disabled={!file} style={{ backgroundColor: '#3498db', color: 'white', border: 'none', padding: '10px 20px', opacity: !file ? 0.7 : 1 }}>Создать</button>
+              <div className="pt-4 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateModal(false)}
+                  className="flex-1 py-3 bg-[var(--bg-ios)] text-[var(--text-primary)] rounded-xl font-medium hover:bg-gray-200 transition-colors"
+                >
+                  Отмена
+                </button>
+                <button
+                  type="submit"
+                  disabled={!file}
+                  className="flex-1 py-3 bg-[var(--blue-ios)] text-white rounded-xl font-medium disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 transition-all shadow-md hover:shadow-lg"
+                >
+                  Создать
+                </button>
               </div>
             </form>
-          </div>
+          </motion.div>
         </div>
       )}
     </div>

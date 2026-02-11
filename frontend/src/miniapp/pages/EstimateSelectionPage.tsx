@@ -25,7 +25,7 @@ export const EstimateSelectionPage: React.FC = () => {
             try {
                 // Assuming /objects returns list of objects accessible to user (Foreman filtering is on backend)
                 const { apiClient } = await import('../../api/client');
-                const { data } = await apiClient.get<CostObject[]>('/objects');
+                const data = await apiClient.get<CostObject[]>('/objects');
                 setObjects(data);
             } catch (err) {
                 console.error("Failed to load objects", err);

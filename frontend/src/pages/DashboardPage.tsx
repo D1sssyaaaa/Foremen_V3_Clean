@@ -1,27 +1,22 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { apiClient } from '../api/client';
-import { useNavigate } from 'react-router-dom';
-import { Modal } from '../components/Modal';
+import { motion } from 'framer-motion';
+import {
+  Building2,
+  FileText,
+  Package,
+  Truck,
+  BarChart3
+} from 'lucide-react';
 import { TopObjectsChart } from '../components/TopObjectsChart';
 import { TopEquipmentChart } from '../components/TopEquipmentChart';
-import '../styles/Modal.css';
-
-// Перевод ролей на русский
-const roleLabels: Record<string, string> = {
-  'ADMIN': 'Администратор',
-  'MANAGER': 'Менеджер',
-  'FOREMAN': 'Бригадир',
-  'ACCOUNTANT': 'Бухгалтер',
-  'HR_MANAGER': 'Кадровик',
-  'EQUIPMENT_MANAGER': 'Менеджер по технике',
-  'MATERIALS_MANAGER': 'Менеджер по материалам',
-  'PROCUREMENT_MANAGER': 'Менеджер по закупкам',
-};
 
 interface DashboardStats {
   objects: number;
   upd: number;
+  newUPD?: number;
   materialRequests: number;
   equipmentOrders: number;
   timesheets?: number;
@@ -36,430 +31,226 @@ export function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats>({
     objects: 0,
     upd: 0,
+    newUPD: 0,
     materialRequests: 0,
     equipmentOrders: 0,
     newMaterialRequests: 0,
     pendingEquipment: 0,
   });
-  const [loading, setLoading] = useState(true);
-  const [activeModal, setActiveModal] = useState<'objects' | 'upd' | 'materials' | 'equipment' | null>(null);
+
+  const [activeModal, setActiveModal] = useState<'upd' | null>(null);
 
   useEffect(() => {
+    const loadStats = async () => {
+      if (!user) return;
+
+      try {
+        const [objectsRes, updRes, materialsRes, equipmentRes] = await Promise.all([
+          apiClient.get<any[]>('/objects/').catch(() => []),
+          apiClient.get<any[]>('/upd/').catch(() => []),
+          apiClient.get<any[]>('/material-requests/').catch(() => []),
+          apiClient.get<any[]>('/equipment-orders/').catch(() => []),
+        ]);
+
+        setStats({
+          objects: Array.isArray(objectsRes) ? objectsRes.length : 0,
+          upd: Array.isArray(updRes) ? updRes.length : 0,
+          newUPD: Array.isArray(updRes) ? updRes.filter((u: any) => u.status === 'NEW').length : 0,
+          materialRequests: Array.isArray(materialsRes) ? materialsRes.length : 0,
+          equipmentOrders: Array.isArray(equipmentRes) ? equipmentRes.length : 0,
+          newMaterialRequests: Array.isArray(materialsRes) ? materialsRes.filter((r: any) => r.status === 'NEW').length : 0,
+          pendingEquipment: Array.isArray(equipmentRes) ? equipmentRes.filter((o: any) => o.status === 'NEW').length : 0,
+        });
+      } catch (error) {
+        console.error('Failed to load dashboard stats:', error);
+      }
+    };
+
     loadStats();
-  }, []);
-
-  const loadStats = async () => {
-    try {
-      // Загружаем данные из API
-      const [objectsRes, updRes, materialsRes, equipmentRes] = await Promise.all([
-        apiClient.get<any[]>('/objects/').catch(() => []),
-        apiClient.get<any[]>('/material-costs/').catch(() => []),
-        apiClient.get<any[]>('/material-requests/').catch(() => []),
-        apiClient.get<any[]>('/equipment-orders/').catch(() => []),
-      ]);
-
-      setStats({
-        objects: Array.isArray(objectsRes) ? objectsRes.length : 0,
-        upd: Array.isArray(updRes) ? updRes.length : 0,
-        materialRequests: Array.isArray(materialsRes) ? materialsRes.length : 0,
-        equipmentOrders: Array.isArray(equipmentRes) ? equipmentRes.length : 0,
-        newMaterialRequests: Array.isArray(materialsRes) ? materialsRes.filter((r: any) => r.status === 'NEW').length : 0,
-        pendingEquipment: Array.isArray(equipmentRes) ? equipmentRes.filter((o: any) => o.status === 'NEW').length : 0,
-      });
-    } catch (err) {
-      console.error('Ошибка загрузки статистики:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [user]);
 
   const cards = [
     {
       title: 'Объекты',
-      icon: '🏗️',
-      count: stats.objects,
-      color: '#3498db',
+      value: stats.objects,
+      icon: Building2,
+      color: 'text-blue-500',
+      bg: 'bg-blue-50',
       path: '/objects',
-      type: 'objects' as const,
-      subtitle: 'всего в системе'
+      subtitle: 'активных'
     },
     {
       title: 'УПД документы',
-      icon: '📄',
-      count: stats.upd,
-      color: '#2ecc71',
+      value: stats.upd,
+      icon: FileText,
+      color: 'text-purple-500',
+      bg: 'bg-purple-50',
       path: '/upd',
       type: 'upd' as const,
-      subtitle: 'загружено'
+      subtitle: stats.newUPD ? `${stats.newUPD} новых` : 'все обработаны',
+      highlight: !!stats.newUPD
     },
     {
       title: 'Заявки на материалы',
-      icon: '📦',
-      count: stats.materialRequests,
-      color: '#e74c3c',
+      value: stats.materialRequests,
+      icon: Package,
+      color: 'text-orange-500',
+      bg: 'bg-orange-50',
       path: '/material-requests',
-      type: 'materials' as const,
-      subtitle: stats.newMaterialRequests ? `${stats.newMaterialRequests} новых` : 'всего'
+      subtitle: stats.newMaterialRequests ? `${stats.newMaterialRequests} новых` : 'в работе'
     },
     {
-      title: 'Аренда техники',
-      icon: '🚜',
-      count: stats.equipmentOrders,
-      color: '#f39c12',
+      title: 'Заявки на технику',
+      value: stats.equipmentOrders,
+      icon: Truck,
+      color: 'text-green-500',
+      bg: 'bg-green-50',
       path: '/equipment-orders',
-      type: 'equipment' as const,
-      subtitle: stats.pendingEquipment ? `${stats.pendingEquipment} ожидают` : 'всего'
-    },
+      subtitle: stats.pendingEquipment ? `${stats.pendingEquipment} ожидают` : 'в работе'
+    }
   ];
 
-  // Модули быстрого доступа в зависимости от ролей
-  const getQuickActions = () => {
-    const actions = [];
-
-    if (user?.roles.some(r => ['ADMIN', 'MANAGER', 'ACCOUNTANT'].includes(r))) {
-      actions.push({ label: '📄 Загрузить УПД', path: '/upd', color: '#3498db' });
-    }
-
-    if (user?.roles.some(r => ['ADMIN', 'MANAGER', 'FOREMAN'].includes(r))) {
-      actions.push({ label: '📦 Заявки на материалы', path: '/material-requests', color: '#2ecc71' });
-      actions.push({ label: '🚜 Заявки на технику', path: '/equipment-orders', color: '#f39c12' });
-    }
-
-
-
-    actions.push({ label: '📊 Отчёты и аналитика', path: '/analytics', color: '#1abc9c' });
-
-    if (user?.roles.includes('ADMIN')) {
-      actions.push({ label: '⚙️ Администрирование', path: '/admin', color: '#95a5a6' });
-    }
-
-    return actions;
-  };
-
   return (
-    <div>
-      <h1 style={{ marginTop: 0 }}>🏠 Главная</h1>
-
-      {/* Информация о профиле */}
-      <div style={{
-        backgroundColor: 'white',
-        padding: '25px',
-        borderRadius: '12px',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-        marginBottom: '30px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '25px'
-      }}>
-        {user?.profile_photo_url ? (
-          <img
-            src={`http://192.168.0.235:8000${user.profile_photo_url}`}
-            alt="Фото профиля"
-            style={{
-              width: '90px',
-              height: '90px',
-              borderRadius: '50%',
-              objectFit: 'cover',
-              border: '4px solid #3498db'
-            }}
-          />
-        ) : (
-          <div style={{
-            width: '90px',
-            height: '90px',
-            borderRadius: '50%',
-            background: 'linear-gradient(135deg, #3498db, #2980b9)',
-            color: 'white',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '36px',
-            fontWeight: 'bold',
-            boxShadow: '0 4px 12px rgba(52, 152, 219, 0.4)'
-          }}>
-            {(user?.full_name || user?.username || '?')[0].toUpperCase()}
-          </div>
-        )}
-        <div style={{ flex: 1 }}>
-          <h2 style={{ margin: '0 0 8px 0', fontSize: '24px' }}>
-            👋 Добро пожаловать, {user?.full_name || user?.username}!
+    <div className="space-y-8 animate-fade-in">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-[var(--text-primary)] tracking-tight">
+            Добро пожаловать, {user?.full_name || user?.username}
           </h2>
-          <div style={{ color: '#7f8c8d', fontSize: '14px', marginBottom: '8px' }}>
-            @{user?.username}
-          </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-            {user?.roles.map(role => (
-              <span
-                key={role}
-                style={{
-                  padding: '4px 12px',
-                  backgroundColor: '#3498db20',
-                  color: '#3498db',
-                  borderRadius: '12px',
-                  fontSize: '12px',
-                  fontWeight: '500'
-                }}
-              >
-                {roleLabels[role] || role}
-              </span>
-            ))}
-          </div>
-          {user?.birth_date && (
-            <div style={{ color: '#7f8c8d', fontSize: '13px', marginTop: '8px' }}>
-              🎂 Дата рождения: {new Date(user.birth_date).toLocaleDateString('ru')}
-            </div>
-          )}
+          <p className="text-[var(--text-secondary)] mt-1">
+            Обзор текущего состояния системы
+          </p>
+        </div>
+        <div className="px-4 py-2 bg-[var(--bg-card)] rounded-xl border border-[var(--separator)] text-sm font-medium text-[var(--text-secondary)] shadow-sm">
+          {new Date().toLocaleDateString('ru-RU', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
         </div>
       </div>
 
-      {/* Статистика */}
-      <h3 style={{ marginBottom: '15px', color: '#2c3e50' }}>📊 Статистика системы</h3>
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-        gap: '20px',
-        marginBottom: '40px'
-      }}>
-        {cards.map(card => (
-          <div
-            key={card.title}
-            onClick={() => setActiveModal(card.type)}
-            style={{
-              backgroundColor: 'white',
-              padding: '25px',
-              borderRadius: '12px',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-              borderLeft: `5px solid ${card.color}`,
-              cursor: 'pointer',
-              transition: 'transform 0.2s, box-shadow 0.2s'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'translateY(-4px)';
-              e.currentTarget.style.boxShadow = '0 8px 20px rgba(0,0,0,0.15)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)';
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
-              <span style={{ fontSize: '24px' }}>{card.icon}</span>
-              <span style={{ fontSize: '14px', color: '#7f8c8d' }}>{card.title}</span>
-            </div>
-            <div style={{ fontSize: '36px', fontWeight: 'bold', color: card.color }}>
-              {loading ? '...' : card.count}
-            </div>
-            <div style={{ fontSize: '12px', color: '#95a5a6', marginTop: '5px' }}>
-              {card.subtitle}
-            </div>
-          </div>
-        ))}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        {cards.map((card, index) => {
+          const Icon = card.icon;
+          return (
+            <motion.div
+              key={index}
+              whileHover={{ y: -2 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={() => {
+                if (card.type === 'upd' && stats.newUPD! > 0) {
+                  setActiveModal('upd');
+                } else {
+                  navigate(card.path);
+                }
+              }}
+              className="bg-[var(--bg-card)] rounded-2xl p-6 shadow-sm border border-[var(--separator)] cursor-pointer relative overflow-hidden group transition-all hover:shadow-md"
+            >
+              <div className="flex justify-between items-start mb-4">
+                <div className={`p-3 rounded-xl ${card.bg} ${card.color}`}>
+                  <Icon size={24} strokeWidth={2} />
+                </div>
+                {card.highlight && (
+                  <span className="flex h-3 w-3 relative">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                  </span>
+                )}
+              </div>
+
+              <div className="space-y-1">
+                <div className="text-3xl font-bold text-[var(--text-primary)]">
+                  {card.value}
+                </div>
+                <div className="font-medium text-[var(--text-primary)]">
+                  {card.title}
+                </div>
+                <div className={`text-sm ${card.highlight ? 'text-red-500 font-bold' : 'text-[var(--text-secondary)]'}`}>
+                  {card.subtitle}
+                </div>
+              </div>
+            </motion.div>
+          );
+        })}
       </div>
 
-      {/* Графики продуктивности */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(500px, 1fr))',
-        gap: '20px',
-        marginBottom: '40px'
-      }}>
-        <div style={{
-          backgroundColor: 'white',
-          padding: '25px',
-          borderRadius: '12px',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-        }}>
-          <h3 style={{ marginTop: 0, marginBottom: '20px', color: '#2c3e50' }}>
-            📊 Топ объектов по доставкам материалов
-          </h3>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="bg-[var(--bg-card)] rounded-2xl p-6 shadow-sm border border-[var(--separator)]">
+          <div className="flex items-center gap-2 mb-6">
+            <BarChart3 className="text-blue-500" size={20} />
+            <h3 className="text-lg font-semibold text-[var(--text-primary)] m-0">
+              Топ объектов по доставкам
+            </h3>
+          </div>
           <TopObjectsChart />
         </div>
 
-        <div style={{
-          backgroundColor: 'white',
-          padding: '25px',
-          borderRadius: '12px',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-        }}>
-          <h3 style={{ marginTop: 0, marginBottom: '20px', color: '#2c3e50' }}>
-            🚜 Топ объектов по расходам на технику
-          </h3>
+        <div className="bg-[var(--bg-card)] rounded-2xl p-6 shadow-sm border border-[var(--separator)]">
+          <div className="flex items-center gap-2 mb-6">
+            <Truck className="text-green-500" size={20} />
+            <h3 className="text-lg font-semibold text-[var(--text-primary)] m-0">
+              Расходы на технику
+            </h3>
+          </div>
           <TopEquipmentChart />
         </div>
       </div>
 
-      {/* Быстрый доступ */}
-      <div style={{
-        backgroundColor: 'white',
-        padding: '25px',
-        borderRadius: '12px',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-      }}>
-        <h3 style={{ marginTop: 0, marginBottom: '20px' }}>⚡ Быстрый доступ</h3>
-        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-          {getQuickActions().map(action => (
-            <button
-              key={action.path}
-              onClick={() => navigate(action.path)}
-              style={{
-                padding: '12px 20px',
-                backgroundColor: action.color,
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                fontSize: '14px',
-                cursor: 'pointer',
-                transition: 'opacity 0.2s, transform 0.2s'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.opacity = '0.9';
-                e.currentTarget.style.transform = 'scale(1.02)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.opacity = '1';
-                e.currentTarget.style.transform = 'scale(1)';
-              }}
-            >
-              {action.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Подсказки для новых пользователей */}
-      {stats.objects === 0 && !loading && (
-        <div style={{
-          marginTop: '30px',
-          backgroundColor: '#fef9e7',
-          border: '1px solid #f9e79f',
-          padding: '20px',
-          borderRadius: '12px'
-        }}>
-          <h4 style={{ margin: '0 0 10px 0', color: '#d68910' }}>💡 Начало работы</h4>
-          <p style={{ margin: 0, color: '#7f8c8d' }}>
+      {stats.objects === 0 && (
+        <div className="bg-yellow-50 border border-yellow-100 rounded-2xl p-6">
+          <h4 className="text-yellow-800 font-bold mb-2 m-0 text-lg">💡 Начало работы</h4>
+          <p className="text-yellow-700 m-0">
             Для начала работы создайте объекты учёта, загрузите УПД документы или используйте Telegram бот для создания заявок.
           </p>
         </div>
       )}
 
-      {/* Модальные окна статистики */}
-      <Modal
-        isOpen={activeModal === 'objects'}
-        onClose={() => setActiveModal(null)}
-        title="Объекты учета"
-        size="large"
-      >
-        <div style={{ padding: '20px' }}>
-          <p style={{ marginBottom: '15px', color: '#7f8c8d' }}>
-            Всего объектов в системе: <strong>{stats.objects}</strong>
-          </p>
-          <button
-            onClick={() => { setActiveModal(null); navigate('/objects'); }}
-            style={{
-              padding: '10px 20px',
-              backgroundColor: '#3498db',
-              color: 'white',
-              border: 'none',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              fontSize: '14px'
-            }}
+      {/* Modern Modal */}
+      {activeModal === 'upd' && (
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="bg-[var(--bg-card)] rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden border border-[var(--separator)]"
           >
-            Перейти к объектам →
-          </button>
-        </div>
-      </Modal>
+            <div className="p-6 text-center">
+              <div className="mx-auto bg-purple-100 w-16 h-16 rounded-full flex items-center justify-center mb-4">
+                <FileText className="text-purple-600" size={32} />
+              </div>
+              <h3 className="text-xl font-bold mb-2 text-[var(--text-primary)]">
+                УПД Документы
+              </h3>
 
-      <Modal
-        isOpen={activeModal === 'upd'}
-        onClose={() => setActiveModal(null)}
-        title="УПД документы"
-        size="large"
-      >
-        <div style={{ padding: '20px' }}>
-          <p style={{ marginBottom: '15px', color: '#7f8c8d' }}>
-            Загружено УПД документов: <strong>{stats.upd}</strong>
-          </p>
-          <button
-            onClick={() => { setActiveModal(null); navigate('/upd'); }}
-            style={{
-              padding: '10px 20px',
-              backgroundColor: '#2ecc71',
-              color: 'white',
-              border: 'none',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              fontSize: '14px'
-            }}
-          >
-            Перейти к УПД →
-          </button>
-        </div>
-      </Modal>
+              <div className="space-y-3 mb-6">
+                <div className="p-3 bg-[var(--bg-ios)] rounded-xl flex justify-between items-center">
+                  <span className="text-[var(--text-secondary)] text-sm">Всего</span>
+                  <span className="text-lg font-bold text-[var(--text-primary)]">{stats.upd}</span>
+                </div>
 
-      <Modal
-        isOpen={activeModal === 'materials'}
-        onClose={() => setActiveModal(null)}
-        title="Заявки на материалы"
-        size="large"
-      >
-        <div style={{ padding: '20px' }}>
-          <p style={{ marginBottom: '10px', color: '#7f8c8d' }}>
-            Всего заявок: <strong>{stats.materialRequests}</strong>
-          </p>
-          {stats.newMaterialRequests! > 0 && (
-            <p style={{ marginBottom: '15px', color: '#e74c3c', fontWeight: 'bold' }}>
-              Новых заявок: {stats.newMaterialRequests}
-            </p>
-          )}
-          <button
-            onClick={() => { setActiveModal(null); navigate('/material-requests'); }}
-            style={{
-              padding: '10px 20px',
-              backgroundColor: '#e74c3c',
-              color: 'white',
-              border: 'none',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              fontSize: '14px'
-            }}
-          >
-            Перейти к заявкам →
-          </button>
-        </div>
-      </Modal>
+                {stats.newUPD! > 0 && (
+                  <div className="p-3 bg-green-50 rounded-xl border border-green-100 flex justify-between items-center">
+                    <span className="text-green-700 text-sm font-medium">Требуют внимания</span>
+                    <span className="text-lg font-bold text-green-700">{stats.newUPD}</span>
+                  </div>
+                )}
+              </div>
 
-      <Modal
-        isOpen={activeModal === 'equipment'}
-        onClose={() => setActiveModal(null)}
-        title="Аренда техники"
-        size="large"
-      >
-        <div style={{ padding: '20px' }}>
-          <p style={{ marginBottom: '10px', color: '#7f8c8d' }}>
-            Всего заявок на технику: <strong>{stats.equipmentOrders}</strong>
-          </p>
-          {stats.pendingEquipment! > 0 && (
-            <p style={{ marginBottom: '15px', color: '#f39c12', fontWeight: 'bold' }}>
-              Ожидают утверждения: {stats.pendingEquipment}
-            </p>
-          )}
-          <button
-            onClick={() => { setActiveModal(null); navigate('/equipment-orders'); }}
-            style={{
-              padding: '10px 20px',
-              backgroundColor: '#f39c12',
-              color: 'white',
-              border: 'none',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              fontSize: '14px'
-            }}
-          >
-            Перейти к технике →
-          </button>
+              <div className="space-y-3">
+                <button
+                  onClick={() => { setActiveModal(null); navigate('/upd'); }}
+                  className="w-full py-3.5 bg-[var(--blue-ios)] text-white rounded-xl font-semibold text-[17px] active:scale-[0.98] transition-transform"
+                >
+                  Перейти к списку
+                </button>
+                <button
+                  onClick={() => setActiveModal(null)}
+                  className="w-full py-3.5 text-[var(--blue-ios)] hover:bg-[var(--bg-ios)] rounded-xl font-medium transition-colors"
+                >
+                  Отмена
+                </button>
+              </div>
+            </div>
+          </motion.div>
         </div>
-      </Modal>
+      )}
     </div>
   );
 }

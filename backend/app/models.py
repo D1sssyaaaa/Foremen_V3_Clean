@@ -11,7 +11,7 @@ from sqlalchemy.orm import relationship, Mapped, mapped_column
 from app.core.database import Base
 from app.core.models_base import (
     MaterialRequestStatus, UPDStatus, RegistrationRequestStatus, ObjectStatus,
-    TimestampMixin, EquipmentOrderStatus, MaterialType
+    TimestampMixin, EquipmentOrderStatus, MaterialType, TimeSheetStatus
 )
 
 
@@ -231,6 +231,7 @@ class MaterialCost(Base, TimestampMixin):
     xml_file_path = Column(String(500), nullable=True)  # Путь в S3/MinIO
     generator = Column(String(100), nullable=True)  # Elewise, 1C, Diadoc и т.д.
     parsing_issues = Column(JSON, nullable=True)  # Проблемы парсинга
+    file_hash = Column(String(64), nullable=True, index=True, unique=True)  # SHA-256 хэш файла для дедупликации
     
     @property
     def total_with_vat(self):
@@ -531,11 +532,65 @@ __all__ = [
     "RegistrationRequest", "ObjectAccessRequest", "AuditLog", "TelegramNotification",
     "EstimateItem",
     "TelegramLinkCode", "Delivery",
-    "TimeEntry",
+    "TimeEntry", "TimeSheet", "TimeSheetItem", "TimeSheetComment",
     "RecentWorker",
     "LaborCost", "OtherCost", "DeliveryCost",
     "object_foremen", "UPDDistribution", "SavedWorker"
 ]
+
+
+class TimeSheet(Base, TimestampMixin):
+    """Табель рабочего времени"""
+    __tablename__ = "time_sheets"
+
+    id = Column(Integer, primary_key=True, index=True)
+    brigade_id = Column(Integer, ForeignKey("brigades.id", ondelete="CASCADE"), nullable=False, index=True)
+    period_start = Column(Date, nullable=False, index=True)
+    period_end = Column(Date, nullable=False, index=True)
+    status = Column(String(50), nullable=False, default=TimeSheetStatus.DRAFT.value, index=True)
+    total_hours = Column(Float, default=0.0)
+    total_amount = Column(Float, default=0.0)
+    notes = Column(Text, nullable=True)
+    cancellation_reason = Column(Text, nullable=True)
+
+    # Relationships
+    brigade = relationship("Brigade", backref="time_sheets")
+    items = relationship("TimeSheetItem", back_populates="time_sheet", cascade="all, delete-orphan")
+    comments = relationship("TimeSheetComment", back_populates="time_sheet", cascade="all, delete-orphan")
+
+
+class TimeSheetItem(Base):
+    """Запись в табеле"""
+    __tablename__ = "time_sheet_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    time_sheet_id = Column(Integer, ForeignKey("time_sheets.id", ondelete="CASCADE"), nullable=False, index=True)
+    member_id = Column(Integer, ForeignKey("brigade_members.id", ondelete="CASCADE"), nullable=False)
+    cost_object_id = Column(Integer, ForeignKey("cost_objects.id", ondelete="CASCADE"), nullable=False)
+    date = Column(Date, nullable=False)
+    hours = Column(Float, nullable=False)
+    hour_rate = Column(Float, default=0.0)
+    amount = Column(Float, default=0.0)
+
+    # Relationships
+    time_sheet = relationship("TimeSheet", back_populates="items")
+    member = relationship("BrigadeMember")
+    cost_object = relationship("CostObject")
+
+
+class TimeSheetComment(Base, TimestampMixin):
+    """Комментарии к табелю"""
+    __tablename__ = "time_sheet_comments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    time_sheet_id = Column(Integer, ForeignKey("time_sheets.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    comment_type = Column(String(50), nullable=False, default="GENERAL")
+    text = Column(Text, nullable=False)
+
+    # Relationships
+    time_sheet = relationship("TimeSheet", back_populates="comments")
+    user = relationship("User")
 
 
 class TimeEntry(Base):

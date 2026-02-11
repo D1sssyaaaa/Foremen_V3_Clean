@@ -116,6 +116,41 @@ class APIClient:
         response.raise_for_status()
         return response.json()
     
+    async def get_material_requests(self, status: Optional[str] = None) -> list[Dict[str, Any]]:
+        """Получить список всех заявок (для менеджеров) с фильтрацией"""
+        headers = self.headers
+        params = {}
+        if status:
+            params["status"] = status
+            
+        response = await self.client.get(
+            f"{self.base_url}/material-requests/",
+            headers=headers,
+            params=params
+        )
+        response.raise_for_status()
+        return response.json()
+        
+    async def update_material_request_status(
+        self, 
+        request_id: int, 
+        status: str, 
+        reason: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Обновить статус заявки на материалы"""
+        headers = self.headers
+        data = {"status": status}
+        if reason:
+            data["rejection_reason"] = reason
+            
+        response = await self.client.patch(
+            f"{self.base_url}/material-requests/{request_id}/status",
+            json=data,
+            headers=headers
+        )
+        response.raise_for_status()
+        return response.json()
+    
     # ===== Equipment Requests =====
     async def create_equipment_request(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Создать заявку на технику"""
@@ -142,6 +177,44 @@ class APIClient:
         response.raise_for_status()
         return response.json()
     
+    async def get_equipment_requests(self, status: Optional[str] = None) -> list[Dict[str, Any]]:
+        """Получить заявки на технику (для менеджеров) с фильтрацией"""
+        headers = {"Content-Type": "application/json"}
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+        
+        params = {}
+        if status:
+            params["status"] = status
+            
+        response = await self.client.get(
+            f"{self.base_url}/equipment-orders/",
+            headers=headers,
+            params=params
+        )
+        response.raise_for_status()
+        return response.json()
+
+    async def update_equipment_request_status(
+        self, 
+        order_id: int, 
+        status: str, 
+        reason: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Обновить статус заявки на технику"""
+        headers = self.headers
+        data = {"status": status}
+        if reason:
+            data["rejection_reason"] = reason
+            
+        response = await self.client.patch(
+            f"{self.base_url}/equipment-orders/{order_id}/status",
+            json=data,
+            headers=headers
+        )
+        response.raise_for_status()
+        return response.json()
+        
     async def request_cancel_equipment(self, order_id: int, reason: str) -> Dict[str, Any]:
         """Запросить отмену заявки на технику"""
         headers = {"Content-Type": "application/json"}
@@ -150,6 +223,19 @@ class APIClient:
         response = await self.client.post(
             f"{self.base_url}/equipment-orders/{order_id}/request-cancel",
             json={"reason": reason},
+            headers=headers
+        )
+        response.raise_for_status()
+        return response.json()
+    
+    async def add_equipment_hours(self, order_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Добавить часы работы техники"""
+        headers = {"Content-Type": "application/json"}
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+        response = await self.client.post(
+            f"{self.base_url}/equipment-orders/{order_id}/hours",
+            json=data,
             headers=headers
         )
         response.raise_for_status()
@@ -178,8 +264,23 @@ class APIClient:
                 json={"telegram_user_id": telegram_user_id}
             )
             response.raise_for_status()
-            data = response.json()
-            return data.get("access_token")
+            return response.json()  # Возвращаем весь ответ (access_token, user)
+        except Exception:
+            return None
+
+    async def get_me(self) -> Optional[Dict[str, Any]]:
+        """Получить информацию о текущем пользователе"""
+        headers = self.headers
+        if "Authorization" not in headers:
+            return None
+            
+        try:
+            response = await self.client.get(
+                f"{self.base_url}/users/me",
+                headers=headers
+            )
+            response.raise_for_status()
+            return response.json()
         except Exception:
             return None
     

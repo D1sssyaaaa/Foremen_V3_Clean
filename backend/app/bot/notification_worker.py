@@ -15,6 +15,8 @@ from app.notifications.models import TelegramNotification
 logger = logging.getLogger(__name__)
 
 
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
 class NotificationWorker:
     """Worker для отправки уведомлений через Telegram"""
     
@@ -99,12 +101,27 @@ class NotificationWorker:
         """Отправка одного уведомления"""
         text = self._format_notification(notif)
         
+        reply_markup = None
+        data = notif.data or {}
+        
+        # Добавляем кнопки в зависимости от действия
+        if data.get("action") == "submit_hours" and "order_id" in data:
+            reply_markup = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(
+                    text="⏱ Подать часы", 
+                    callback_data=f"eq:hours:{data['order_id']}"
+                )]
+            ])
+            
         # Отправка через Telegram Bot API
         await self.bot.send_message(
             chat_id=notif.telegram_chat_id,
             text=text,
-            parse_mode="HTML"
+            parse_mode="HTML",
+            reply_markup=reply_markup
         )
+    
+    # ... (rest of methods)
     
     def _format_notification(self, notif: TelegramNotification) -> str:
         """Форматирование текста уведомления"""
